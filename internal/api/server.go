@@ -90,6 +90,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusInternalServerError, "查询事件失败: "+err.Error())
 		return
 	}
+	// 本地时刻由服务端按 GUANFU_TZ 现算下发，前端不依赖浏览器时区。
+	for _, ev := range events {
+		ev.FillLocalTime()
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": events})
 }
 

@@ -16,6 +16,8 @@ export interface Event {
   time_precision: 'second' | 'day';
   occurred_at: number;
   local_date: string;
+  /** 服务端按 GUANFU_TZ 计算的本地时刻（HH:MM），前端直接用，不信任浏览器时区 */
+  local_time?: string;
   title: string;
   summary?: string;
   amount_cents?: number;

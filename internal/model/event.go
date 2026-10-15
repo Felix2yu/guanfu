@@ -51,6 +51,9 @@ type Event struct {
 	OccurredAt int64 `json:"occurred_at"`
 	// LocalDate 本地时区归日（YYYY-MM-DD），时间轴的主查询键。
 	LocalDate string `json:"local_date"`
+	// LocalTime 本地时区时刻（HH:MM），由服务端按 GUANFU_TZ 计算后下发。
+	// 前端不得自行用浏览器时区格式化（用户设备时区不可假定）。
+	LocalTime string `json:"local_time,omitempty"`
 
 	Title   string `json:"title"`
 	Summary string `json:"summary,omitempty"`
@@ -109,4 +112,9 @@ func NewDayEvent(source, externalID, eventType, localDate string) *Event {
 		OccurredAt:    noon.UTC().Unix(),
 		LocalDate:     localDate,
 	}
+}
+
+// FillLocalTime 按本地时区计算 LocalTime 展示字段（入库列不存，输出时现算）。
+func (e *Event) FillLocalTime() {
+	e.LocalTime = time.Unix(e.OccurredAt, 0).In(LocalLocation()).Format("15:04")
 }

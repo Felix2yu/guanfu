@@ -6,6 +6,8 @@
   const meta = $derived(SOURCE_META[event.source] ?? { label: event.source, dot: 'bg-zinc-400', text: 'text-zinc-500' });
   const typeLabel = $derived(TYPE_LABEL[event.event_type] ?? event.event_type);
   const isDay = $derived(event.time_precision === 'day');
+  // 优先服务端下发的本地时刻（GUANFU_TZ），仅在缺失时回退浏览器时区。
+  const timeText = $derived(event.local_time ?? fmtTime(event.occurred_at));
   const amountText = $derived(
     event.amount_cents ? `${event.detail?.type === 'income' ? '+' : '−'}¥${fmtAmount(event.amount_cents)}` : ''
   );
@@ -24,7 +26,7 @@
         >全天</span
       >
     {:else}
-      {fmtTime(event.occurred_at)}
+      {timeText}
     {/if}
   </span>
 
@@ -45,5 +47,7 @@
     {/if}
   </div>
 
-  <span class="shrink-0 text-[11px] {meta.text}">{typeLabel} · {meta.label}</span>
+  <span class="shrink-0 text-[11px] {meta.text}">
+    {#if typeLabel === meta.label}{typeLabel}{:else}{typeLabel} · {meta.label}{/if}
+  </span>
 </div>
