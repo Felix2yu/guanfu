@@ -42,7 +42,50 @@
       ? `${event.latitude?.toFixed(4)}, ${event.longitude?.toFixed(4)}`
       : ''
   );
+
+  // ---------- 日记（diary） ----------
+  const MOOD_EMOJI = ['😞', '🙁', '😐', '🙂', '😄'];
+  const diary = $derived.by(() => {
+    if (event.event_type !== 'diary' || !event.detail) return null;
+    const mood = Number(event.detail.mood ?? 0);
+    // 正文前 3 行（服务端已剥 HTML 存 content_text）。
+    const lines = String(event.detail.content_text ?? '')
+      .split('\n')
+      .map((l) => l.trim())
+      .filter(Boolean)
+      .slice(0, 3)
+      .join('\n');
+    return { emoji: mood >= 1 && mood <= 5 ? MOOD_EMOJI[mood - 1] : '', lines };
+  });
+
+  // ---------- 照片（photo，按天聚合） ----------
+  const photos = $derived(
+    event.event_type === 'photo' ? (event.media ?? []).filter((m: MediaRef) => m.proxy_path) : []
+  );
+  // 网格最多展示 32 张，其余经灯箱浏览（懒加载，避免一天上百张全渲染）。
+  const photoGrid = $derived(photos.slice(0, 32));
+  const photoMore = $derived(photos.length - photoGrid.length);
+  let lightbox = $state(-1);
+
+  function openLightbox(i: number) {
+    lightbox = i;
+  }
+  function closeLightbox() {
+    lightbox = -1;
+  }
+  function stepLightbox(delta: number) {
+    if (lightbox < 0) return;
+    lightbox = (lightbox + delta + photos.length) % photos.length;
+  }
+  function onKeydown(e: KeyboardEvent) {
+    if (lightbox < 0) return;
+    if (e.key === 'Escape') closeLightbox();
+    else if (e.key === 'ArrowLeft') stepLightbox(-1);
+    else if (e.key === 'ArrowRight') stepLightbox(1);
+  }
 </script>
+
+<svelte:window onkeydown={onKeydown} />
 
 <!-- 紧凑单行事件卡：左侧源色点 + 时间（全天事件显示「全天」徽标）+ 标题/摘要。 -->
 <div
@@ -73,6 +116,9 @@
 
   <div class="min-w-0 flex-1">
     <div class="flex items-baseline gap-2">
+      {#if diary?.emoji}
+        <span class="shrink-0 text-sm" aria-label="心情">{diary.emoji}</span>
+      {/if}
       <span class="truncate font-medium text-zinc-900 dark:text-zinc-100">{event.title}</span>
       {#if amountText}
         <span class="shrink-0 text-sm font-semibold tabular-nums {event.detail?.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
@@ -93,6 +139,11 @@
     {#if event.summary && event.summary !== event.title}
       <div class="truncate text-xs text-zinc-500 dark:text-zinc-400">{event.summary}</div>
     {/if}
+    {#if diary?.lines}
+      <div class="mt-1 whitespace-pre-line line-clamp-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+        {diary.lines}
+      </div>
+    {/if}
     {#if healthChips.length > 0}
       <div class="mt-1 flex flex-wrap gap-1">
         {#each healthChips as chip (chip.key)}
@@ -102,9 +153,68 @@
         {/each}
       </div>
     {/if}
+    {#if photoGrid.length > 0}
+      <!-- 当日照片网格：懒加载 + 点击灯箱；视频素材带 ▶ 标。 -->
+      <div class="mt-1.5 grid grid-cols-8 gap-1">
+        {#each photoGrid as m, i (m.id)}
+          <button
+            type="button"
+            class="relative aspect-square overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800"
+            onclick={() => openLightbox(i)}
+            title="查看照片"
+          >
+            <img
+              src={m.proxy_path}
+              alt=""
+              class="h-full w-full object-cover"
+              loading="lazy"
+              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
+            />
+            {#if m.kind === 'video'}
+              <span class="absolute bottom-0.5 right-0.5 text-[9px] leading-none text-white drop-shadow">▶</span>
+            {/if}
+          </button>
+        {/each}
+        {#if photoMore > 0}
+          <button
+            type="button"
+            class="flex aspect-square items-center justify-center rounded bg-zinc-100 text-[11px] font-medium text-zinc-500 tabular-nums dark:bg-zinc-800 dark:text-zinc-400"
+            onclick={() => openLightbox(photoGrid.length)}
+          >
+            +{photoMore}
+          </button>
+        {/if}
+      </div>
+    {/if}
   </div>
 
   <span class="shrink-0 text-[11px] {meta.text}">
     {#if typeLabel === meta.label}{typeLabel}{:else}{typeLabel} · {meta.label}{/if}
   </span>
 </div>
+
+<!-- 照片灯箱：preview 尺寸 + ←/→ 切换 + Esc 关闭。 -->
+{#if lightbox >= 0 && photos[lightbox]}
+  <div
+    class="fixed inset-0 z-50 flex flex-col items-center justify-center bg-black/80 p-4"
+    role="dialog"
+    aria-modal="true"
+    tabindex="-1"
+    onkeydown={onKeydown}
+    onclick={(e) => {
+      if (e.currentTarget === e.target) closeLightbox();
+    }}
+  >
+    <img
+      src={(photos[lightbox].proxy_path ?? '') + '?size=preview'}
+      alt=""
+      class="max-h-[80vh] max-w-full rounded object-contain"
+    />
+    <div class="mt-3 flex items-center gap-4 text-sm text-white">
+      <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={() => stepLightbox(-1)}>←</button>
+      <span class="tabular-nums">{lightbox + 1} / {photos.length}</span>
+      <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={() => stepLightbox(1)}>→</button>
+      <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={closeLightbox}>关闭</button>
+    </div>
+  </div>
+{/if}

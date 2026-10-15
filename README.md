@@ -66,8 +66,10 @@ cd web && pnpm install && pnpm dev
 | `ZHICHANG_METRICS` | 8 项核心指标 | 逗号分隔的指标名列表 |
 | `DAWARICH_BASE_URL` / `DAWARICH_API_KEY` | — | 到访地点（Bearer，全权凭证只发 GET） |
 | `BILI_HISTORY_BASE_URL` | — | 拾帧集观看历史（REST 零鉴权，**无需 key**） |
+| `DIARUM_BASE_URL` / `DIARUM_API_KEY` | — | 吾身日记（Bearer JWT，或 `用户名:密码` 自动登录换 JWT） |
+| `IMMICH_BASE_URL` / `IMMICH_API_KEY` | — | Immich 照片（`x-api-key`，只读 key 按天聚合为 photo 事件） |
 
-其余源（diarum/immich）按 `<NAME>_BASE_URL` / `<NAME>_API_KEY` 模式追加。**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；各源默认回溯天数：mujian 365 / zhichang 30 / dawarich 30 / bili-history 90（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
+各源**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；默认回溯天数：mujian 365 / diarum 365 / zhichang 30 / dawarich 30 / bili-history 90 / immich 365（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
 
 ## 架构
 

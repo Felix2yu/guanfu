@@ -56,10 +56,11 @@ func Load() *Config {
 	lookback := map[string]int{
 		"huozhi":       90,  // 交易流水：季度级回溯够用
 		"mujian":       365, // 演出记录：手工录入，历史价值高
+		"diarum":       365, // 日记：一天一篇，历史价值高（与 mujian 同级）
 		"zhichang":     30,  // 健康：数据密集，一月起步
 		"dawarich":     30,  // 位置：数据密集
 		"bili-history": 90,  // 观看历史
-		"immich":       365, // 照片（M3）
+		"immich":       365, // 照片：按天聚合，回溯一年
 	}
 	cfg.Sources["huozhi"] = SourceConfig{
 		BaseURL:      strings.TrimRight(os.Getenv("HUOZHI_BASE_URL"), "/"),

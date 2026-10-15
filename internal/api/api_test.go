@@ -205,10 +205,111 @@ func TestProxyPathFor(t *testing.T) {
 		{"bili-history", "http://i0.hdslb.com/a.jpg", ""},   // 必须 https
 		{"bili-history", "https://sub.hdslb.com.evil.com/x", ""}, // 后缀伪装
 		{"zhichang", "whatever", ""},                        // 无代理分支
+		// immich：UUID 才放行（防路径穿越/注入）。
+		{"immich", "3b37059b-8e63-4d93-a254-7e02dd6a4d29", "/api/v1/media/immich/3b37059b-8e63-4d93-a254-7e02dd6a4d29"},
+		{"immich", "../../etc/passwd", ""},
+		{"immich", "not-a-uuid", ""},
+		{"immich", "3b37059b8e634d93a2547e02dd6a4d29", ""}, // 缺连字符
 	}
 	for _, c := range cases {
 		if got := ProxyPathFor(c.source, c.id); got != c.want {
 			t.Errorf("ProxyPathFor(%q,%q) = %q, want %q", c.source, c.id, got, c.want)
 		}
+	}
+}
+
+// ---------- immich 媒体代理 ----------
+
+func TestMediaProxyImmichThumbnailAndOriginal(t *testing.T) {
+	var gotPaths []string
+	var gotKeys []string
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		gotPaths = append(gotPaths, r.URL.RequestURI())
+		gotKeys = append(gotKeys, r.Header.Get("x-api-key"))
+		w.Header().Set("Content-Type", "image/jpeg")
+		_, _ = w.Write([]byte("fake-jpeg"))
+	}))
+	defer upstream.Close()
+
+	sources := map[string]config.SourceConfig{"immich": {BaseURL: upstream.URL, APIKey: "im-key"}}
+	srv, _ := newTestServer(t, sources)
+	id := "3b37059b-8e63-4d93-a254-7e02dd6a4d29"
+
+	// 缺省 → thumbnail?size=thumbnail。
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/media/immich/"+id, nil))
+	if rec.Code != http.StatusOK || rec.Body.String() != "fake-jpeg" {
+		t.Fatalf("缺省缩略图异常: %d %q", rec.Code, rec.Body.String())
+	}
+	// preview / original 尺寸路由。
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/media/immich/"+id+"?size=preview", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("preview 异常: %d", rec.Code)
+	}
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/media/immich/"+id+"?size=original", nil))
+	if rec.Code != http.StatusOK {
+		t.Fatalf("original 异常: %d", rec.Code)
+	}
+	wantPaths := []string{
+		"/api/assets/" + id + "/thumbnail?size=thumbnail",
+		"/api/assets/" + id + "/thumbnail?size=preview",
+		"/api/assets/" + id + "/original",
+	}
+	for i, want := range wantPaths {
+		if gotPaths[i] != want {
+			t.Fatalf("回源路径异常: got %q want %q", gotPaths[i], want)
+		}
+		if gotKeys[i] != "im-key" {
+			t.Fatalf("x-api-key 未透传: %q", gotKeys[i])
+		}
+	}
+}
+
+func TestMediaProxyImmichValidation(t *testing.T) {
+	sources := map[string]config.SourceConfig{"immich": {BaseURL: "http://immich.test", APIKey: "k"}}
+	srv, _ := newTestServer(t, sources)
+	// 非法 assetID。
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/media/immich/..%2F..%2Fetc%2Fpasswd", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("非法 ID 应 400，实际 %d", rec.Code)
+	}
+	// 非法 size。
+	rec = httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/media/immich/3b37059b-8e63-4d93-a254-7e02dd6a4d29?size=evil", nil))
+	if rec.Code != http.StatusBadRequest {
+		t.Fatalf("非法 size 应 400，实际 %d", rec.Code)
+	}
+	// 未配置（缺 key 同样不可用）。
+	srv2, _ := newTestServer(t, nil)
+	rec = httptest.NewRecorder()
+	srv2.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/media/immich/3b37059b-8e63-4d93-a254-7e02dd6a4d29", nil))
+	if rec.Code != http.StatusNotFound {
+		t.Fatalf("未配置应 404，实际 %d", rec.Code)
+	}
+}
+
+// 事件输出时 immich 媒体引用也应填 ProxyPath。
+func TestEventsFillProxyPathImmich(t *testing.T) {
+	sources := map[string]config.SourceConfig{"immich": {BaseURL: "http://immich.test", APIKey: "k"}}
+	srv, st := newTestServer(t, sources)
+	id := "3b37059b-8e63-4d93-a254-7e02dd6a4d29"
+	seedEvent(t, st, "immich", "2026-10-15", "2026-10-15", []model.MediaRef{{Kind: "photo", ID: id}})
+
+	rec := httptest.NewRecorder()
+	srv.Handler().ServeHTTP(rec, httptest.NewRequest("GET", "/api/v1/events?date=2026-10-15", nil))
+	var resp struct {
+		Data []*model.Event `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if len(resp.Data) != 1 || len(resp.Data[0].Media) != 1 {
+		t.Fatalf("事件异常: %+v", resp.Data)
+	}
+	if got := resp.Data[0].Media[0].ProxyPath; got != "/api/v1/media/immich/"+id {
+		t.Fatalf("immich 代理路径异常: %q", got)
 	}
 }
