@@ -7,10 +7,12 @@ package main
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log"
 	"net/http"
 	"os"
 	"os/signal"
+	"strings"
 	"syscall"
 	"time"
 
@@ -38,13 +40,19 @@ func main() {
 
 	registry := sync.NewRegistry()
 	registry.Register(sources.NewHuozhiSource(cfg.Sources["huozhi"]))
+	registry.Register(sources.NewMujianSource(cfg.Sources["mujian"]))
+	registry.Register(sources.NewZhichangSource(cfg.Sources["zhichang"]))
+	registry.Register(sources.NewDawarichSource(cfg.Sources["dawarich"]))
+	registry.Register(sources.NewBiliHistorySource(cfg.Sources["bili-history"]))
 
+	// 启用判定：配置了 BaseURL 即参与调度；各适配器自行校验额外必需项
+	// （如 key），缺失时以 last_error 形式暴露在 /api/v1/sources，不静默跳过。
 	engine := sync.NewEngine(st, registry, func(name string) bool {
 		sc, ok := cfg.Sources[name]
-		return ok && sc.Enabled && sc.BaseURL != "" && sc.APIKey != ""
+		return ok && sc.Enabled && sc.BaseURL != ""
 	})
 
-	apiServer := api.NewServer(st, engine)
+	apiServer := api.NewServer(st, engine, cfg.Sources)
 
 	// 前端托管：磁盘目录优先（不重编译可换前端），否则内嵌产物。
 	handler := apiServer.Handler()
@@ -70,7 +78,15 @@ func main() {
 
 	if cfg.SyncEnabled {
 		engine.Start(ctx)
-		log.Printf("同步引擎已启动（huozhi 间隔 %s）", sources.NewHuozhiSource(cfg.Sources["huozhi"]).Interval())
+		active := make([]string, 0, 5)
+		for _, n := range []string{"huozhi", "mujian", "zhichang", "dawarich", "bili-history"} {
+			if sc := cfg.Sources[n]; sc.Enabled && sc.BaseURL != "" {
+				if a, ok := registry.Get(n); ok {
+					active = append(active, fmt.Sprintf("%s(%s)", n, a.Interval()))
+				}
+			}
+		}
+		log.Printf("同步引擎已启动：%s", strings.Join(active, " "))
 	} else {
 		log.Printf("同步引擎已禁用（GUANFU_SYNC_ENABLED=0）")
 	}

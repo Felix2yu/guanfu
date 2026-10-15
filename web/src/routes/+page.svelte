@@ -1,12 +1,18 @@
 <script lang="ts">
   import { onMount } from 'svelte';
   import EventCard from '$lib/components/EventCard.svelte';
+  import Heatmap from '$lib/components/Heatmap.svelte';
   import {
+    fetchCountsRange,
     fetchEvents,
     fetchRange,
     fetchSources,
     fmtWeekday,
+    monthEnd,
+    monthOf,
+    monthStart,
     shiftDate,
+    shiftMonth,
     todayStr,
     triggerSync,
     type Event,
@@ -21,6 +27,11 @@
   let error = $state('');
   let syncing = $state('');
 
+  // 日历热力图：默认收起，展开时拉取当月每日事件数。
+  let showHeatmap = $state(false);
+  let heatMonth = $state(monthOf(todayStr()));
+  let heatCounts = $state<Record<string, number>>({});
+
   onMount(async () => {
     try {
       [range, sources] = await Promise.all([fetchRange(), fetchSources()]);
@@ -28,6 +39,16 @@
       error = String(e);
     }
     await load(date);
+  });
+
+  $effect(() => {
+    if (!showHeatmap) return;
+    // 依赖 month 与 range（range 变化时数据边界可能变化）。
+    const month = heatMonth;
+    void range;
+    fetchCountsRange(monthStart(month), monthEnd(month))
+      .then((c) => (heatCounts = c))
+      .catch(() => (heatCounts = {}));
   });
 
   async function load(d: string) {
@@ -46,6 +67,7 @@
   async function goto(d: string) {
     if (d === date) return;
     date = d;
+    heatMonth = monthOf(d);
     await load(d);
   }
 
@@ -131,6 +153,32 @@
       <button class="rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" onclick={() => sync('all')}>
         同步全部
       </button>
+      <button
+        class="ml-auto rounded-full border px-2 py-0.5 transition-colors {showHeatmap
+          ? 'border-zinc-400 text-zinc-700 dark:text-zinc-200'
+          : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-700'}"
+        onclick={() => (showHeatmap = !showHeatmap)}
+      >
+        {showHeatmap ? '收起热力图' : '热力图'}
+      </button>
+    </div>
+  {/if}
+
+  <!-- 日历热力图：月视图，点击格子跳日 -->
+  {#if showHeatmap}
+    <div class="mb-4 flex items-start gap-2">
+      <button class="btn mt-3" onclick={() => (heatMonth = shiftMonth(heatMonth, -1))} aria-label="上个月">←</button>
+      <div class="flex-1">
+        <Heatmap
+          month={heatMonth}
+          counts={heatCounts}
+          selected={date}
+          minDate={range.min}
+          maxDate={range.max}
+          onpick={(d: string) => goto(d)}
+        />
+      </div>
+      <button class="btn mt-3" onclick={() => (heatMonth = shiftMonth(heatMonth, 1))} aria-label="下个月">→</button>
     </div>
   {/if}
 

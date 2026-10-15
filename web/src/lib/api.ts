@@ -56,6 +56,46 @@ export function fetchRange(): Promise<{ min: string; max: string }> {
   return get<{ min: string; max: string }>('/api/v1/range');
 }
 
+/** 日历热力图数据源：范围内每日事件总数 { 'YYYY-MM-DD': n } */
+export function fetchCountsRange(from: string, to: string): Promise<Record<string, number>> {
+  return get<Record<string, number>>(`/api/v1/events/counts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+}
+
+/** 月份工具：'YYYY-MM' ↔ 该月首尾日期 */
+export function monthOf(date: string): string {
+  return date.slice(0, 7);
+}
+
+export function monthStart(month: string): string {
+  return month + '-01';
+}
+
+export function monthEnd(month: string): string {
+  const [y, m] = month.split('-').map(Number);
+  const last = new Date(y, m, 0).getDate();
+  return `${month}-${String(last).padStart(2, '0')}`;
+}
+
+export function shiftMonth(month: string, delta: number): string {
+  const [y, m] = month.split('-').map(Number);
+  const d = new Date(y, m - 1 + delta, 1);
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+}
+
+/** 月历格子：周一起始，返回当月各日日期串（含前置 null 占位）。 */
+export function monthGrid(month: string): (string | null)[] {
+  const [y, m] = month.split('-').map(Number);
+  const first = new Date(y, m - 1, 1);
+  const days = new Date(y, m, 0).getDate();
+  const lead = (first.getDay() + 6) % 7; // 周一=0
+  const cells: (string | null)[] = Array.from({ length: lead }, () => null);
+  for (let d = 1; d <= days; d++) {
+    cells.push(`${month}-${String(d).padStart(2, '0')}`);
+  }
+  while (cells.length % 7 !== 0) cells.push(null);
+  return cells;
+}
+
 export function fetchSources(): Promise<SourceState[]> {
   return get<SourceState[]>('/api/v1/sources');
 }

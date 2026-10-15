@@ -31,12 +31,15 @@ type Config struct {
 type SourceConfig struct {
 	BaseURL string
 	APIKey  string
-	// Enabled 显式开关；未设置时按「有 BaseURL + APIKey」推断。
+	// Enabled 显式开关。规则：*_ENABLED=1 强制开；=0 强制关；
+	// 未设置时「配了 BaseURL 即自动启用」（避免配了地址却忘记开开关的静默失败）。
 	Enabled bool
 	// Interval 覆盖该源默认同步间隔；0 表示用适配器默认值。
 	Interval time.Duration
-	// 仅 huozhi 使用：增量游标缺失时的默认回溯天数。
+	// 增量游标缺失时的默认回溯天数（各源在 Load 里给默认值）。
 	LookbackDays int
+	// 仅 zhichang 使用：逗号分隔的指标名列表，空表示用适配器默认核心指标。
+	Metrics string
 }
 
 // Load 从环境变量构建配置。
@@ -49,26 +52,50 @@ func Load() *Config {
 		SyncEnabled: getenv("GUANFU_SYNC_ENABLED", "1") != "0",
 		Sources:     map[string]SourceConfig{},
 	}
+	// 各源默认回溯天数（首次无 cursor 时的回溯窗口）。
+	lookback := map[string]int{
+		"huozhi":       90,  // 交易流水：季度级回溯够用
+		"mujian":       365, // 演出记录：手工录入，历史价值高
+		"zhichang":     30,  // 健康：数据密集，一月起步
+		"dawarich":     30,  // 位置：数据密集
+		"bili-history": 90,  // 观看历史
+		"immich":       365, // 照片（M3）
+	}
 	cfg.Sources["huozhi"] = SourceConfig{
 		BaseURL:      strings.TrimRight(os.Getenv("HUOZHI_BASE_URL"), "/"),
 		APIKey:       os.Getenv("HUOZHI_API_KEY"),
-		Enabled:      os.Getenv("HUOZHI_ENABLED") != "0",
+		Enabled:      sourceEnabled("HUOZHI", os.Getenv("HUOZHI_BASE_URL") != ""),
 		Interval:     getenvDuration("HUOZHI_INTERVAL", 30*time.Minute),
-		LookbackDays: getenvInt("HUOZHI_LOOKBACK_DAYS", 90),
+		LookbackDays: getenvInt("HUOZHI_LOOKBACK_DAYS", lookback["huozhi"]),
 	}
-	// 其余源（mujian/diarum/zhichang/dawarich/bili-history/immich）在 M2/M3
-	// 落地时按同样模式追加；未配置的源不会进入调度。
+	// 其余源（mujian/diarum/zhichang/dawarich/bili-history/immich）按同样
+	// 模式注册；未配置 BaseURL 的源不参与调度，也不会在状态里报错。
 	for _, name := range []string{"mujian", "diarum", "zhichang", "dawarich", "bili-history", "immich"} {
-		base := strings.TrimRight(os.Getenv(strings.ToUpper(name)+"_BASE_URL"), "/")
-		key := os.Getenv(strings.ToUpper(name) + "_API_KEY")
+		upper := strings.ToUpper(name)
+		base := strings.TrimRight(os.Getenv(upper+"_BASE_URL"), "/")
+		key := os.Getenv(upper + "_API_KEY")
 		cfg.Sources[name] = SourceConfig{
-			BaseURL:  base,
-			APIKey:   key,
-			Enabled:  os.Getenv(strings.ToUpper(name)+"_ENABLED") == "1",
-			Interval: getenvDuration(strings.ToUpper(name)+"_INTERVAL", 0),
+			BaseURL:      base,
+			APIKey:       key,
+			Enabled:      sourceEnabled(upper, base != ""),
+			Interval:     getenvDuration(upper+"_INTERVAL", 0),
+			LookbackDays: getenvInt(upper+"_LOOKBACK_DAYS", lookback[name]),
+			Metrics:      os.Getenv(upper + "_METRICS"),
 		}
 	}
 	return cfg
+}
+
+// sourceEnabled 三态开关：显式 1 开、显式 0 关、未设置按 configured 推断。
+func sourceEnabled(upper string, configured bool) bool {
+	switch os.Getenv(upper + "_ENABLED") {
+	case "1":
+		return true
+	case "0":
+		return false
+	default:
+		return configured
+	}
 }
 
 func getenv(key, def string) string {

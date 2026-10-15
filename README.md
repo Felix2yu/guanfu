@@ -61,8 +61,13 @@ cd web && pnpm install && pnpm dev
 | `HUOZHI_BASE_URL` / `HUOZHI_API_KEY` | — | 货殖记账（`X-API-Key` 认证） |
 | `HUOZHI_INTERVAL` | `30m` | 同步间隔 |
 | `HUOZHI_LOOKBACK_DAYS` | `90` | 首轮无游标时的回溯天数 |
+| `MUJIAN_BASE_URL` / `MUJIAN_API_KEY` | — | 幕间演出（token 可选，未配置则放通） |
+| `ZHICHANG_BASE_URL` | — | 知常健康（读取端零鉴权，**无需 key**） |
+| `ZHICHANG_METRICS` | 8 项核心指标 | 逗号分隔的指标名列表 |
+| `DAWARICH_BASE_URL` / `DAWARICH_API_KEY` | — | 到访地点（Bearer，全权凭证只发 GET） |
+| `BILI_HISTORY_BASE_URL` | — | 拾帧集观看历史（REST 零鉴权，**无需 key**） |
 
-其余源（mujian/diarum/zhichang/dawarich/bili-history/immich）按 `<NAME>_BASE_URL` / `<NAME>_API_KEY` / `<NAME>_ENABLED=1` 模式追加，适配器落地后自动进入调度（路线图见 docs/观复规划.md §7）。
+其余源（diarum/immich）按 `<NAME>_BASE_URL` / `<NAME>_API_KEY` 模式追加。**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；各源默认回溯天数：mujian 365 / zhichang 30 / dawarich 30 / bili-history 90（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
 
 ## 架构
 
@@ -70,13 +75,13 @@ cd web && pnpm install && pnpm dev
 cmd/guanfu/         入口：配置 → store → 引擎 → API → 优雅停机
 internal/
   config/           环境变量配置（凭据只进 env）
-  model/            统一事件模型（events）+ 时区
+  model/            统一事件模型（events）+ 时区 + GCJ-02→WGS-84
   store/            SQLite：events（幂等 upsert）+ sources（游标/状态）
   sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离
-  sources/          数据源适配器（M1：huozhi）
-  api/              REST API（/api/v1/events 等）
+  sources/          数据源适配器（M2：huozhi/mujian/zhichang/dawarich/bili-history）
+  api/              REST API（/api/v1/events 等）+ 媒体代理
   web/              前端托管：磁盘目录优先，go:embed 内嵌兜底（all:dist）
-web/                SvelteKit 5 SPA
+web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 ```
 
 ### 统一事件模型
@@ -101,14 +106,18 @@ web/                SvelteKit 5 SPA
 | GET | `/api/v1/health` | 健康检查 |
 | GET | `/api/v1/events?date=YYYY-MM-DD` | 事件列表（支持 from/to/source/type/limit/offset） |
 | GET | `/api/v1/events/counts?date=` | 某日各源事件数 |
+| GET | `/api/v1/events/counts?from=&to=` | 范围内每日事件总数（日历热力图数据源） |
 | GET | `/api/v1/range` | 库日期范围（日历边界） |
 | GET | `/api/v1/sources` | 源同步状态（游标/错误/条数） |
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
+| GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
+| GET | `/api/v1/media/bili-history?u=` | 视频封面（回源 bili-history images/proxy） |
 
 ## 安全约定
 
 - 所有 API key 只经环境变量传入；**不写入仓库、不写入文档、不进镜像层**
 - 各源 key 均为全权凭证（huozhi/mujian/dawarich/immich 概莫如此），观复只发 GET 请求
+- 媒体代理做路径穿越防护（mujian key 字符集 + `..` 拒绝）与 SSRF 防护（bili 封面仅限 `*.hdslb.com` + https）
 - SQLite 文件位于 `/data` 卷，纳入既有备份体系（docker-db-auto-backup）
 
 ## 开发

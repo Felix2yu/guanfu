@@ -160,6 +160,27 @@ func (s *Store) CountByDate(date string) (map[string]int, error) {
 	return out, rows.Err()
 }
 
+// CountsByRange 返回 [from, to] 闭区间内每日事件总数（日历热力图数据源）。
+// 聚合下推 SQL（GROUP BY local_date），不在应用层过滤。
+func (s *Store) CountsByRange(from, to string) (map[string]int, error) {
+	rows, err := s.DB.Query(`SELECT local_date, COUNT(*) FROM events
+		WHERE local_date >= ? AND local_date <= ? GROUP BY local_date`, from, to)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	out := map[string]int{}
+	for rows.Next() {
+		var d string
+		var n int
+		if err := rows.Scan(&d, &n); err != nil {
+			return nil, err
+		}
+		out[d] = n
+	}
+	return out, rows.Err()
+}
+
 // DateRange 返回库中最早与最晚 local_date（日历组件边界）。
 func (s *Store) DateRange() (min, max string, err error) {
 	row := s.DB.QueryRow(`SELECT COALESCE(MIN(local_date),''), COALESCE(MAX(local_date),'') FROM events`)
