@@ -25,6 +25,8 @@ HUOZHI_API_KEY=<key> \
 # 打开 http://127.0.0.1:8788
 ```
 
+全部配置项与各源凭据的占位示例见 `.env.example`（`.env` 已被 gitignore 排除）。
+
 工具链可用 `GO_BIN` / `NODE_BIN` / `PNPM_BIN` 覆盖（沙箱 PATH 常缺 go）。
 
 ### Docker
