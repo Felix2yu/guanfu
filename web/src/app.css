@@ -1,0 +1,31 @@
+@import 'tailwindcss';
+
+/* 观复设计基调：紧凑、信息密度优先、单行布局（与 mujian/diarum 一脉相承）。
+   macOS 下 font-smoothing 用 auto（项目约定：antialiased 会让字体发糊）。 */
+:root {
+  color-scheme: light dark;
+}
+
+html {
+  -webkit-font-smoothing: auto;
+  -moz-osx-font-smoothing: auto;
+}
+
+body {
+  margin: 0;
+  font-family:
+    -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue',
+    'Microsoft YaHei', sans-serif;
+  font-size: 14px;
+  line-height: 1.5;
+}
+
+/* 时间轴左侧竖线 */
+.timeline-rail {
+  position: absolute;
+  left: 7px;
+  top: 0;
+  bottom: 0;
+  width: 2px;
+  background: color-mix(in oklab, currentColor 12%, transparent);
+}

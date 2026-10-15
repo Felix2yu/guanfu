@@ -1,0 +1,9 @@
+bin/
+data/
+web/node_modules/
+web/build/
+web/.svelte-kit/
+*.db
+*.db-wal
+*.db-shm
+.DS_Store

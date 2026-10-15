@@ -1,0 +1,12 @@
+# 构建噪音不进入镜像上下文
+bin/
+.git/
+.workbuddy/
+docs/
+web/node_modules/
+web/build/
+web/.svelte-kit/
+data/
+*.db
+*.db-wal
+*.db-shm
