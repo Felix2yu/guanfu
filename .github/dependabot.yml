@@ -53,6 +53,14 @@ updates:
       npm-major:
         patterns: ["*"]
         update-types: ["major"]
+    # 与 preset 同步：typescript 的 major 不提 PR。web 的 typescript@~6 是 JS 编译器 API 宿主，
+    # @sveltejs/kit 的 svelte-kit sync 与 svelte-check 都 require 它；换成 7 会让 CI 在
+    # pnpm install 的 postinstall 就崩（PR#2 的 test/test 正是这么红的）。本仓库还没装
+    # @typescript/native 别名，要用 TS7 得先补「~6 宿主 + 别名 + svelte-check --tsgo」这一套，
+    # 理由与实测见 Felix2yu/.github/docs/dependabot.md 第六节
+    ignore:
+      - dependency-name: "typescript"
+        update-types: ["version-update:semver-major"]
 
   # ── Docker 基础镜像 ─────────────────────────────────────────────────
   - package-ecosystem: "docker"
