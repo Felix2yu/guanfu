@@ -1,0 +1,48 @@
+# 「观复」单机部署：直接拉取 CI 构建好的镜像，不在服务器上本地构建。
+#
+# 用法：
+#   cp .env.example .env      # 填各数据源的 BASE_URL / KEY
+#   docker compose pull && docker compose up -d
+#   浏览器打开 http://<服务器地址>:8788
+#
+# 镜像由 GitHub Actions 在推送到 main 后构建并发布到 GHCR，amd64 / arm64 已合成
+# 多架构 manifest，服务器是什么架构都拉同一个 tag。
+#
+# 数据放在具名卷里而不是绑定挂载：具名卷由 Docker 按容器内用户归属初始化，天然无权限问题。
+# 若确实想绑定挂载到宿主目录（如 ./data:/data），无需手动 chown —— 把下方 environment
+# 里的 PUID / PGID 设成宿主目录的属主 uid/gid，入口脚本会自动 chown /data 并以该身份
+# 运行，从而让 SQLite（WAL 模式，需对 /data 可写）正常写入。不设置时默认 1000:1000。
+
+services:
+  guanfu:
+    # 默认跟随 latest。要钉住某个版本就把 .env 里的 GUANFU_TAG 设成对应的 commit sha。
+    image: ghcr.io/felix2yu/guanfu:${GUANFU_TAG:-latest}
+    container_name: guanfu
+    restart: unless-stopped
+
+    ports:
+      # 默认监听所有网卡的 8788。若前面已有反向代理，改成 "127.0.0.1:8788:8788" 更稳妥。
+      - "8788:8788"
+
+    env_file:
+      # 各数据源凭据只走环境变量，不落镜像层
+      - .env
+
+    environment:
+      # 时区直接决定「哪一天」的归属（local_date 归日），务必与使用者一致
+      TZ: ${TZ:-Asia/Shanghai}
+      GUANFU_DB: /data/guanfu.db
+      GUANFU_TZ: ${TZ:-Asia/Shanghai}
+      # 运行身份：绑定挂载到宿主目录时设成宿主目录属主 uid/gid，入口脚本会自动
+      # chown /data，避免 SQLite 报 error 14: unable to open database file。
+      # 用 `id <你的用户>` 查宿主属主；不设则默认 1000:1000。
+      # PUID: ${PUID:-1000}
+      # PGID: ${PGID:-1000}
+      # 同步引擎总开关（0 = 只提供已有数据的查询）
+      GUANFU_SYNC_ENABLED: ${GUANFU_SYNC_ENABLED:-1}
+
+    volumes:
+      - guanfu-data:/data
+
+volumes:
+  guanfu-data:

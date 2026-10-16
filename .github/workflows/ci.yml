@@ -1,0 +1,75 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+    tags: ['v*']
+  pull_request:
+    branches: [main]
+  release:
+    types: [published]
+  schedule:
+    - cron: '0 3 * * 1'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  test:
+    uses: Felix2yu/.github/.github/workflows/reusable-test.yml@v1
+    secrets:
+      CODECOV_TOKEN: ${{ secrets.CODECOV_TOKEN }}
+    with:
+      go-dir: .
+      test-packages: ./...
+      web-dir: web
+      # SvelteKit 带类型，check 必须并入构建：否则 build 绿而 svelte-check 有问题没人知道
+      web-build-command: pnpm run check && pnpm run build
+      # cmd/guanfu 的 main 包带 //go:embed all:dist。
+      # 仓库里 internal/web/dist 只有 .gitkeep 占位，这里把真实产物摆进去
+      # ——既让 embed 相关用例真跑起来（而非 skip），也顺带验证打包路径。
+      frontend-stage-command: |
+        rm -rf internal/web/dist
+        mkdir -p internal/web/dist
+        cp -R web/build/. internal/web/dist/
+
+  image:
+    needs: test
+    permissions:
+      contents: read
+      packages: write
+    uses: Felix2yu/.github/.github/workflows/reusable-image.yml@v1
+    with:
+      go-dir: .
+      main-package: ./cmd/guanfu
+      binary-name: guanfu
+      image-name: ghcr.io/felix2yu/guanfu
+      # modernc.org/sqlite 是纯 Go 驱动，无 CGO；静态编译即可，镜像用 alpine
+      cgo: off
+      web-dir: web
+      # 产物摆到 go:embed 位置后由 go build 内嵌，镜像里不再 COPY 一份前端
+      frontend-stage-command: |
+        rm -rf internal/web/dist
+        mkdir -p internal/web/dist
+        cp -R web/build/. internal/web/dist/
+
+  release:
+    if: github.event_name == 'release'
+    permissions:
+      contents: write
+    uses: Felix2yu/.github/.github/workflows/reusable-release.yml@v1
+    with:
+      go-dir: .
+      main-package: ./cmd/guanfu
+      binary-name: guanfu
+      cgo: off
+      web-dir: web
+      frontend-stage-command: |
+        rm -rf internal/web/dist
+        mkdir -p internal/web/dist
+        cp -R web/build/. internal/web/dist/

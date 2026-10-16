@@ -1,12 +1,32 @@
-# 构建噪音不进入镜像上下文
-bin/
-.git/
-.workbuddy/
-docs/
+# 构建镜像时忽略的内容。
+#
+# bin/ 不在其中：Dockerfile 已改为「装配式」，CI 预编译的二进制通过
+# COPY bin/guanfu 进镜像，必须出现在构建上下文里。反过来排掉它，报的错是
+# 「file not found in build context」而不是「被忽略了」，很容易查错方向。
+.git
+.gitignore
+.github
+.workbuddy
+
+# 前端依赖与构建缓存（镜像内不再构建前端，产物走 go:embed）
 web/node_modules/
 web/build/
 web/.svelte-kit/
+
+# 本地数据（含真实聚合数据，绝不能进镜像层）
 data/
 *.db
 *.db-wal
 *.db-shm
+
+# 开发与文档
+docs/
+README.md
+LICENSE
+docker-compose.yml
+.env
+.env.*
+
+# 杂项
+**/.DS_Store
+**/*.log

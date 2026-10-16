@@ -7,6 +7,7 @@ package main
 import (
 	"context"
 	"errors"
+	"flag"
 	"fmt"
 	"log"
 	"net/http"
@@ -26,8 +27,16 @@ import (
 )
 
 func main() {
+	showVersion := flag.Bool("version", false, "打印版本并退出")
+	flag.Parse()
+	if *showVersion {
+		fmt.Println("guanfu " + version)
+		return
+	}
+
 	log.SetFlags(log.LstdFlags | log.Lmsgprefix)
 	log.SetPrefix("[guanfu] ")
+	log.Printf("观复 guanfu %s 启动", version)
 
 	cfg := config.Load()
 	model.SetTimezone(cfg.Timezone)

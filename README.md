@@ -31,16 +31,32 @@ HUOZHI_API_KEY=<key> \
 
 ### Docker
 
+镜像由 GitHub Actions 在推送到 `main` 后构建并发布到 GHCR（`ghcr.io/felix2yu/guanfu`），
+amd64 / arm64 已合成多架构 manifest，服务器直接拉取即可：
+
 ```bash
+cp .env.example .env      # 填各数据源 BASE_URL / KEY
+docker compose pull && docker compose up -d
+# 打开 http://<服务器地址>:8788
+```
+
+镜像是**装配式**的：Dockerfile 只拼装 CI 预编译的二进制（前端已经 `go:embed` 内嵌进去），
+镜像内没有 Go / Node 工具链。因此本地自行构建镜像前必须先产出二进制：
+
+```bash
+./scripts/build.sh        # 产出 bin/guanfu
 docker build -t guanfu .
 docker run -d --name guanfu \
   -p 8788:8788 \
-  -e PUID=1000 -e PGID=100 \
   -e HUOZHI_BASE_URL=https://huozhi.example.com \
   -e HUOZHI_API_KEY=<key> \
-  -v /path/to/data:/data \
+  -v guanfu-data:/data \
   guanfu
 ```
+
+`/data` 是唯一持久化目录（SQLite，WAL 模式），已纳入既有备份体系（docker-db-auto-backup）。
+绑定挂载宿主目录（如 `-v ./data:/data`）时把 `PUID` / `PGID` 设成该目录属主 uid/gid，
+入口脚本会自动 `chown /data` 再降权运行；不设置时默认 `1000:1000`。
 
 ### 前端单独开发（热更新）
 
@@ -83,7 +99,7 @@ internal/
   model/            统一事件模型（events）+ 时区 + GCJ-02→WGS-84
   store/            SQLite：events（幂等 upsert）+ sources（游标/状态）
   sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离
-  sources/          数据源适配器（M2：huozhi/mujian/zhichang/dawarich/bili-history）
+  sources/          数据源适配器（huozhi/mujian/diarum/immich/zhichang/dawarich/bili-history/qiansi/shenshi/liuxia）
   api/              REST API（/api/v1/events 等）+ 媒体代理
   web/              前端托管：磁盘目录优先，go:embed 内嵌兜底（all:dist）
 web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
@@ -132,3 +148,15 @@ web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 /opt/homebrew/bin/go vet ./...
 cd web && pnpm check                      # svelte-check 类型检查
 ```
+
+工具链版本由仓库自己的声明决定：仓库根 `.nvmrc`（Node 26）、`web/package.json` 的
+`packageManager`（pnpm 11.22.0）、`web/pnpm-lock.yaml`。CI 用 `--frozen-lockfile` 安装，
+**不设兜底版本**——这三者缺任何一项 CI 直接失败。
+
+`internal/web/dist/` 下只提交 `.gitkeep` 占位，真实前端产物由 `./scripts/build.sh`
+或 CI 生成后 `go:embed` 进二进制；未构建时服务只提供 API（启动日志会写明）。
+
+CI 走组织共享的可复用 workflow（`Felix2yu/.github`）：`test`（go vet + go test + 覆盖率
+上报 + 前端 check/build）、`image`（预编译二进制 → 装配镜像 → 双架构 manifest 推 GHCR）、
+`release`（发布 Release 时出 5 平台二进制）。版本号不在任何文件里，由 git tag 经
+`-ldflags -X main.version` 注入（本地构建为 `dev`，`guanfu -version` 可查）。
