@@ -20,6 +20,7 @@ import (
 //	bili-history GET /api/v1/media/bili-history?u=<url>  → {bili}/api/images/proxy?url=<url>
 //	immich       GET /api/v1/media/immich/{assetID}?size= → {immich}/api/assets/{id}/thumbnail?size=
 //	             thumbnail|preview|fullsize|original      （original 走 /original 端点）
+//	qingye       GET /api/v1/media/qingye/{file}         → {qingye}/uploads/{file}
 
 // mediaKeyRe mujian uploads 存储键字符集（covers/<hash>.<ext>），
 // 同时挡住路径穿越（无 ".."、不允 Leading slash 由路由保证）。
@@ -30,6 +31,11 @@ var biliCoverHostRe = regexp.MustCompile(`(^|\.)hdslb\.com$`)
 
 // immichAssetIDRe Immich 资产 ID 为 UUID v4（防路径穿越/注入）。
 var immichAssetIDRe = regexp.MustCompile(`^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$`)
+
+// qingyeFileRe 青野上传文件名（实测形态 `<雪花号>_<随机>.jpg`，扁平命名无子目录）。
+// 刻意不放 "/"：mujian 的 covers/<hash>.<ext> 有子目录，qingye 没有，
+// 少一个斜杠就少一类穿越空间。
+var qingyeFileRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,190}$`)
 
 // immichSizes 允许代理的缩略图尺寸（original 走独立端点）。
 var immichSizes = map[string]bool{"thumbnail": true, "preview": true, "fullsize": true}
@@ -53,6 +59,7 @@ func (p *MediaProxy) Routes(mux *http.ServeMux) {
 	mux.HandleFunc("GET /api/v1/media/mujian/{key...}", p.handleMujianMedia)
 	mux.HandleFunc("GET /api/v1/media/bili-history", p.handleBiliMedia)
 	mux.HandleFunc("GET /api/v1/media/immich/{assetID}", p.handleImmichMedia)
+	mux.HandleFunc("GET /api/v1/media/qingye/{file}", p.handleQingyeMedia)
 }
 
 // ProxyPathFor 为事件的媒体引用生成代理路径（API 输出时调用）。
@@ -79,6 +86,12 @@ func ProxyPathFor(source string, mediaID string) string {
 			return ""
 		}
 		return "/api/v1/media/immich/" + mediaID
+	case "qingye":
+		// mediaID 为 /uploads/ 下的扁平文件名（适配器已从 image 的绝对路径里剥出来）。
+		if !qingyeFileRe.MatchString(mediaID) {
+			return ""
+		}
+		return "/api/v1/media/qingye/" + mediaID
 	default:
 		return ""
 	}
@@ -201,5 +214,27 @@ func (p *MediaProxy) handleImmichMedia(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	req.Header.Set("x-api-key", origin.APIKey)
+	p.pipe(w, req)
+}
+
+// handleQingyeMedia 代理青野上传的图片（实测同源 /uploads/<file>，200 image/jpeg、无鉴权）。
+// 上游没有缩略图端点，代理只流转原图，尺寸控制交给浏览器的 img 缩放。
+func (p *MediaProxy) handleQingyeMedia(w http.ResponseWriter, r *http.Request) {
+	file := r.PathValue("file")
+	if !qingyeFileRe.MatchString(file) {
+		writeErr(w, http.StatusBadRequest, "非法媒体文件名")
+		return
+	}
+	origin, ok := p.origins["qingye"]
+	if !ok || origin.BaseURL == "" {
+		writeErr(w, http.StatusNotFound, "qingye 未配置")
+		return
+	}
+	target := origin.BaseURL + "/uploads/" + file
+	req, err := http.NewRequestWithContext(r.Context(), http.MethodGet, target, nil)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "构造请求失败")
+		return
+	}
 	p.pipe(w, req)
 }

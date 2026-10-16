@@ -68,10 +68,14 @@
     return { emoji: mood >= 1 && mood <= 5 ? MOOD_EMOJI[mood - 1] : '', lines };
   });
 
-  // ---------- 照片（photo，按天聚合） ----------
+  // ---------- 照片（photo 按天聚合 / plant_diary 单张配图） ----------
   const photos = $derived(
-    event.event_type === 'photo' ? (event.media ?? []).filter((m: MediaRef) => m.proxy_path) : []
+    event.event_type === 'photo' || event.event_type === 'plant_diary'
+      ? (event.media ?? []).filter((m: MediaRef) => m.proxy_path)
+      : []
   );
+  // 园艺日记一天通常只有一两张，用大格；照片聚合日可能几十张，用小格密排。
+  const photoCols = $derived(event.event_type === 'plant_diary' ? 'grid-cols-4' : 'grid-cols-8');
   // 网格最多展示 32 张，其余经灯箱浏览（懒加载，避免一天上百张全渲染）。
   const photoGrid = $derived(photos.slice(0, 32));
   const photoMore = $derived(photos.length - photoGrid.length);
@@ -174,7 +178,7 @@
     {/if}
     {#if photoGrid.length > 0}
       <!-- 当日照片网格：懒加载 + 点击灯箱；视频素材带 ▶ 标。 -->
-      <div class="mt-1.5 grid grid-cols-8 gap-1">
+      <div class="mt-1.5 grid {photoCols} gap-1">
         {#each photoGrid as m, i (m.id)}
           <button
             type="button"

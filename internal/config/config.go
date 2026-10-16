@@ -70,6 +70,7 @@ func Load() *Config {
 		"qiansi":       180, // 人情往来：手工录入，半年回溯
 		"shenshi":      90,  // 任务/习惯/复盘：季度回溯
 		"liuxia":       30,  // 天象预报：时效性数据，一月足够
+		"qingye":       365, // 园艺日记/养护：手工记录，历史价值与日记同级
 	}
 	cfg.Sources["huozhi"] = SourceConfig{
 		BaseURL:      strings.TrimRight(os.Getenv("HUOZHI_BASE_URL"), "/"),
@@ -79,10 +80,10 @@ func Load() *Config {
 		LookbackDays: getenvInt("HUOZHI_LOOKBACK_DAYS", lookback["huozhi"]),
 	}
 	// 其余源按同样模式注册；未配置 BaseURL 的源不参与调度，也不会在状态里报错。
-	// M4 增值源：qiansi（人情往来）/ shenshi（任务复盘）/ liuxia（霞光预报）。
+	// M4 增值源：qiansi（人情往来）/ shenshi（任务复盘）/ liuxia（霞光预报）/ qingye（园艺）。
 	for _, name := range []string{
 		"mujian", "diarum", "zhichang", "dawarich", "bili-history", "immich",
-		"qiansi", "shenshi", "liuxia",
+		"qiansi", "shenshi", "liuxia", "qingye",
 	} {
 		upper := strings.ToUpper(name)
 		base := strings.TrimRight(os.Getenv(upper+"_BASE_URL"), "/")

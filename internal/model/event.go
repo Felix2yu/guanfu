@@ -33,6 +33,10 @@ const (
 	EventReview      = "review"       // 每日复盘（shenshi）
 	EventHabitCheck  = "habit_check"  // 习惯打卡（shenshi，按天聚合）
 	EventSkyForecast = "sky_forecast" // 朝霞/晚霞预报（liuxia，按天聚合）
+
+	// M4 收尾源
+	EventPlantDiary = "plant_diary" // 植物日记（qingye，可带图，day 精度）
+	EventPlantCare  = "plant_care"  // 养护记录（qingye，浇水/施肥等真实时刻）
 )
 
 // 时间精度：second=时刻流，day=全天分区（日记、健康汇总等无具体时刻的事件）。

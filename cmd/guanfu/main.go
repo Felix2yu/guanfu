@@ -82,6 +82,7 @@ func main() {
 	registry.Register(sources.NewQiansiSource(cfg.Sources["qiansi"]))
 	registry.Register(sources.NewShenshiSource(cfg.Sources["shenshi"]))
 	registry.Register(sources.NewLiuxiaSource(cfg.Sources["liuxia"]))
+	registry.Register(sources.NewQingyeSource(cfg.Sources["qingye"]))
 
 	// 启用判定：配置了 BaseURL 即参与调度；各适配器自行校验额外必需项
 	// （如 key），缺失时以 last_error 形式暴露在 /api/v1/sources，不静默跳过。

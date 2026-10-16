@@ -93,6 +93,7 @@ cd web && pnpm install && pnpm dev
 | `QIANSI_BASE_URL` / `QIANSI_API_KEY` | — | 牵丝人情往来（往来事件/礼金/纪念日；未配 token 的实例放通） |
 | `SHENSHI_BASE_URL` / `SHENSHI_API_KEY` | — | 慎始任务（任务完成/复盘/习惯打卡；未配 token 的实例放通） |
 | `LIUXIA_BASE_URL` | — | 流霞霞光预报（REST 零鉴权，**无需 key**） |
+| `QINGYE_BASE_URL` | — | 青野集园艺（植物日记 + 养护记录；REST 零鉴权，**无需 key**） |
 
 各源**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；默认回溯天数：mujian 365 / diarum 365 / zhichang 30 / dawarich 30 / bili-history 90 / immich 365（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
 
@@ -105,7 +106,7 @@ internal/
   model/            统一事件模型（events）+ 时区 + GCJ-02→WGS-84
   store/            SQLite：events（幂等 upsert）+ sources（游标/状态）
   sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离
-  sources/          数据源适配器（huozhi/mujian/diarum/immich/zhichang/dawarich/bili-history/qiansi/shenshi/liuxia）
+  sources/          数据源适配器（huozhi/mujian/diarum/immich/zhichang/dawarich/bili-history/qiansi/shenshi/liuxia/qingye）
   api/              REST API（/api/v1/events 等）+ 媒体代理
   mcp/              只读 MCP server：5 个查询/聚合工具，HTTP(/mcp) 与 stdio 两种传输
   web/              前端托管：磁盘目录优先，go:embed 内嵌兜底（all:dist）
@@ -140,6 +141,8 @@ web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
 | GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
 | GET | `/api/v1/media/bili-history?u=` | 视频封面（回源 bili-history images/proxy） |
+| GET | `/api/v1/media/immich/{assetID}?size=` | 照片缩略图/原图（`thumbnail`/`preview`/`fullsize`/`original`） |
+| GET | `/api/v1/media/qingye/{file}` | 园艺日记配图（回源 qingye `/uploads/<file>`，上游无缩略图端点，只流转原图） |
 | POST | `/mcp` | 只读 MCP server（Streamable HTTP，见下节） |
 
 ## MCP（只读）
