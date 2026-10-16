@@ -39,6 +39,8 @@ echo "==> [2/3] 复制前端产物到 internal/web/dist（go:embed）"
 rm -rf internal/web/dist
 mkdir -p internal/web/dist
 cp -r web/build/. internal/web/dist/
+# 仓库里 tracked 的 .gitkeep 会被上面的 rm -rf 一起删掉，工作区就永久挂着一条删除记录。
+touch internal/web/dist/.gitkeep
 
 # ---- 3. Go 单二进制 ----
 echo "==> [3/3] go build"

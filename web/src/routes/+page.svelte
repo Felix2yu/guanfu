@@ -1,7 +1,7 @@
 <script lang="ts">
   import { onMount } from 'svelte';
-  import EventCard from '$lib/components/EventCard.svelte';
-  import Heatmap from '$lib/components/Heatmap.svelte';
+  import EventCard from '#lib/components/EventCard.svelte';
+  import Heatmap from '#lib/components/Heatmap.svelte';
   import {
     fetchCountsRange,
     fetchEvents,
@@ -17,7 +17,7 @@
     triggerSync,
     type Event,
     type SourceState
-  } from '$lib/api';
+  } from '#lib/api';
 
   let date = $state(todayStr());
   let events = $state<Event[]>([]);
