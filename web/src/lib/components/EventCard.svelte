@@ -79,6 +79,10 @@
   // 网格最多展示 32 张，其余经灯箱浏览（懒加载，避免一天上百张全渲染）。
   const photoGrid = $derived(photos.slice(0, 32));
   const photoMore = $derived(photos.length - photoGrid.length);
+  // 回源失败的格子整格不渲染（visibility:hidden 会留下一个空格子，比少一张更刺眼）。
+  // 下标与 photoGrid 对齐；photoMore 仍按原始数量算，它描述的是"还有几张在灯箱里"。
+  let failed = $state<Record<number, boolean>>({});
+  const visiblePhotos = $derived(photoGrid.map((m, i) => ({ m, i })).filter((t) => !failed[t.i]));
   let lightbox = $state(-1);
 
   function openLightbox(i: number) {
@@ -89,7 +93,17 @@
   }
   function stepLightbox(delta: number) {
     if (lightbox < 0) return;
-    lightbox = (lightbox + delta + photos.length) % photos.length;
+    const n = photos.length;
+    let next = lightbox;
+    // 跳过取不到的那张；全都取不到就没什么可看的，直接关。
+    for (let k = 0; k < n; k++) {
+      next = (next + delta + n) % n;
+      if (!failed[next]) {
+        lightbox = next;
+        return;
+      }
+    }
+    closeLightbox();
   }
   function onKeydown(e: KeyboardEvent) {
     if (lightbox < 0) return;
@@ -176,24 +190,24 @@
         {/each}
       </div>
     {/if}
-    {#if photoGrid.length > 0}
-      <!-- 当日照片网格：懒加载 + 点击灯箱；视频素材带 ▶ 标。 -->
+    {#if visiblePhotos.length > 0 || photoMore > 0}
+      <!-- 当日照片网格：懒加载 + 点击灯箱；视频素材带 ▶ 标；取不到的那张整格不出现。 -->
       <div class="mt-1.5 grid {photoCols} gap-1">
-        {#each photoGrid as m, i (m.id)}
+        {#each visiblePhotos as t (t.m.id)}
           <button
             type="button"
             class="relative aspect-square overflow-hidden rounded bg-zinc-100 dark:bg-zinc-800"
-            onclick={() => openLightbox(i)}
+            onclick={() => openLightbox(t.i)}
             title="查看照片"
           >
             <img
-              src={m.proxy_path}
+              src={t.m.proxy_path}
               alt=""
               class="h-full w-full object-cover"
               loading="lazy"
-              onerror={(e) => ((e.currentTarget as HTMLImageElement).style.visibility = 'hidden')}
+              onerror={() => (failed[t.i] = true)}
             />
-            {#if m.kind === 'video'}
+            {#if t.m.kind === 'video'}
               <span class="absolute bottom-0.5 right-0.5 text-[9px] leading-none text-white drop-shadow">▶</span>
             {/if}
           </button>
@@ -228,11 +242,19 @@
       if (e.currentTarget === e.target) closeLightbox();
     }}
   >
-    <img
-      src={(photos[lightbox].proxy_path ?? '') + '?size=preview'}
-      alt=""
-      class="max-h-[80vh] max-w-full rounded object-contain"
-    />
+    {#if failed[lightbox]}
+      <!-- 灯箱里这张也取不到：给一句人话，不摆破图图标。 -->
+      <div class="flex max-h-[80vh] items-center rounded bg-zinc-800/70 px-8 py-16 text-sm text-zinc-300">
+        这张图没取到，源站返回了错误
+      </div>
+    {:else}
+      <img
+        src={(photos[lightbox].proxy_path ?? '') + '?size=preview'}
+        alt=""
+        class="max-h-[80vh] max-w-full rounded object-contain"
+        onerror={() => (failed[lightbox] = true)}
+      />
+    {/if}
     <div class="mt-3 flex items-center gap-4 text-sm text-white">
       <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={() => stepLightbox(-1)}>←</button>
       <span class="tabular-nums">{lightbox + 1} / {photos.length}</span>
