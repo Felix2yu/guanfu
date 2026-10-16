@@ -38,7 +38,24 @@ export interface SourceState {
   last_sync_at: number;
   last_error: string;
   last_count: number;
+  // 连接配置（设置页用）。后端只给状态与 env 变量名，永不下发凭据值。
+  base_url?: string;
+  base_url_env?: string;
+  auth?: AuthKind;
+  credential_env?: string;
+  credential_set?: boolean;
+  configured?: boolean;
 }
+
+export type AuthKind = 'none' | 'api_key' | 'bearer' | 'jwt' | 'token';
+
+export const AUTH_LABELS: Record<AuthKind, string> = {
+  none: '无需凭据',
+  api_key: 'API Key 请求头',
+  bearer: 'Bearer Token',
+  jwt: 'JWT（可填 用户名:密码 自动续期）',
+  token: 'Token（源侧未配则放通）'
+};
 
 async function get<T>(path: string): Promise<T> {
   const resp = await fetch(path, { headers: { Accept: 'application/json' } });
@@ -50,6 +67,12 @@ async function get<T>(path: string): Promise<T> {
 
 export function fetchEvents(date: string): Promise<Event[]> {
   return get<Event[]>(`/api/v1/events?date=${encodeURIComponent(date)}&limit=500`);
+}
+
+/** 时间线视图：跨日取一段事件（按 occurred_at 升序）。 */
+export function fetchEventsRange(from: string, to: string, limit = 200, offset = 0): Promise<Event[]> {
+  const q = new URLSearchParams({ from, to, limit: String(limit), offset: String(offset) });
+  return get<Event[]>(`/api/v1/events?${q.toString()}`);
 }
 
 export function fetchRange(): Promise<{ min: string; max: string }> {

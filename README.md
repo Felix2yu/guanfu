@@ -110,7 +110,7 @@ internal/
   api/              REST API（/api/v1/events 等）+ 媒体代理
   mcp/              只读 MCP server：5 个查询/聚合工具，HTTP(/mcp) 与 stdio 两种传输
   web/              前端托管：磁盘目录优先，go:embed 内嵌兜底（all:dist）
-web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
+web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 三视图 + 设置页）
 ```
 
 ### 统一事件模型
@@ -137,7 +137,7 @@ web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 | GET | `/api/v1/events/counts?date=` | 某日各源事件数 |
 | GET | `/api/v1/events/counts?from=&to=` | 范围内每日事件总数（日历热力图数据源） |
 | GET | `/api/v1/range` | 库日期范围（日历边界） |
-| GET | `/api/v1/sources` | 源同步状态（游标/错误/条数） |
+| GET | `/api/v1/sources` | 源同步状态 + 连接配置（端点、认证方式、凭据是否已配；**永不回显凭据值**） |
 | GET | `/api/v1/export?from&to&format=json` | 全量或区间导出（流式 JSON，防锁定；页面右上「导出」按钮即此端点） |
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
 | GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
@@ -145,6 +145,19 @@ web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 | GET | `/api/v1/media/immich/{assetID}?size=` | 照片缩略图/原图（`thumbnail`/`preview`/`fullsize`/`original`） |
 | GET | `/api/v1/media/qingye/{file}` | 园艺日记配图（回源 qingye `/uploads/<file>`，上游无缩略图端点，只流转原图） |
 | POST | `/mcp` | 只读 MCP server（Streamable HTTP，见下节） |
+
+## 视图与外观
+
+单页三视图，顶部段控件切换，偏好记在浏览器 localStorage（不落库）：
+
+- **当日**：这一天的时间轴，全天事件置顶、其余按时刻排，顶栏给收支合计与条数。
+- **日历**：整月热力图，点任意一天回当日视图，月份可前后翻。
+- **时间线**：以当前日期为终点向前开窗（默认 30 天，可「加载更早 30 天」外扩），
+  按日分组、日子倒序、日内时刻正序。窗口撞上服务端 1000 条上限会显式提示不完整。
+
+`/settings` 设置页：外观三选（跟随系统 / 浅色 / 深色）+ 数据源只读总览
+（状态、端点、认证方式、凭据配没配、间隔、上次同步与错误）。明暗走
+`<html class="dark">`，`app.html` 里一段内联脚本在首屏前定色，避免深色模式白闪。
 
 ## MCP（只读）
 

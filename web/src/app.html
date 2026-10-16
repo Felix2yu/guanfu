@@ -5,6 +5,18 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>观复 · 每日数据聚合</title>
     <meta name="color-scheme" content="light dark" />
+    <script>
+      // 首屏前定色：等 Svelte 挂载再切会白闪一下（深色模式下尤其明显）。
+      (() => {
+        try {
+          const t = localStorage.getItem('guanfu.theme') || 'system';
+          const dark =
+            t === 'dark' ||
+            (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+          document.documentElement.classList.toggle('dark', dark);
+        } catch {}
+      })();
+    </script>
     %sveltekit.head%
   </head>
   <body data-sveltekit-preload-data="hover">

@@ -5,6 +5,7 @@
   import {
     fetchCountsRange,
     fetchEvents,
+    fetchEventsRange,
     fetchRange,
     fetchSources,
     fmtWeekday,
@@ -18,6 +19,7 @@
     type Event,
     type SourceState
   } from '#lib/api.ts';
+  import { initUI, disposeUI, setView, ui, VIEW_LABELS, type ViewMode } from '#lib/ui.svelte.ts';
 
   let date = $state(todayStr());
   let events = $state<Event[]>([]);
@@ -27,28 +29,55 @@
   let error = $state('');
   let syncing = $state('');
 
-  // 日历热力图：默认收起，展开时拉取当月每日事件数。
-  let showHeatmap = $state(false);
+  // 日历视图：月份与每日条数。
   let heatMonth = $state(monthOf(todayStr()));
   let heatCounts = $state<Record<string, number>>({});
 
-  onMount(async () => {
-    try {
-      [range, sources] = await Promise.all([fetchRange(), fetchSources()]);
-    } catch (e) {
-      error = String(e);
-    }
-    await load(date);
+  // 时间线视图：以当前日期为终点向前开一个窗口，「加载更早」把窗口再往前推。
+  const TL_STEP = 30;
+  let tlDays = $state(TL_STEP);
+  let tlEvents = $state<Event[]>([]);
+  let tlLoading = $state(false);
+  let tlTruncated = $state(false);
+
+  onMount(() => {
+    initUI();
+    (async () => {
+      try {
+        [range, sources] = await Promise.all([fetchRange(), fetchSources()]);
+      } catch (e) {
+        error = String(e);
+      }
+      await load(date);
+    })();
+    return disposeUI;
   });
 
+  const tlFrom = $derived(shiftDate(date, -(tlDays - 1)));
+
   $effect(() => {
-    if (!showHeatmap) return;
-    // 依赖 month 与 range（range 变化时数据边界可能变化）。
+    if (ui.view !== 'calendar') return;
     const month = heatMonth;
-    void range;
+    void range; // 数据边界变化时（首次加载完）重取
     fetchCountsRange(monthStart(month), monthEnd(month))
       .then((c) => (heatCounts = c))
       .catch(() => (heatCounts = {}));
+  });
+
+  $effect(() => {
+    if (ui.view !== 'timeline') return;
+    const from = tlFrom;
+    const to = date;
+    void tlDays;
+    tlLoading = true;
+    fetchEventsRange(from, to, 1000)
+      .then((list) => {
+        tlEvents = list;
+        // 服务端 limit 上限就是 1000，撞上了说明窗口里还有没取到的，如实标出来。
+        tlTruncated = list.length >= 1000;
+      })
+      .catch((e) => (error = String(e)))
+      .finally(() => (tlLoading = false));
   });
 
   async function load(d: string) {
@@ -75,14 +104,19 @@
     goto(shiftDate(date, days));
   }
 
+  function pickView(v: ViewMode) {
+    setView(v);
+  }
+
   async function sync(source: string) {
     syncing = source;
     try {
       await triggerSync(source);
-      // 同步是异步的，等 3 秒后刷新当前日。
+      // 同步是异步的，等 3 秒后刷新当前视图的数据。
       setTimeout(async () => {
         await load(date);
         sources = await fetchSources();
+        if (ui.view === 'timeline') tlEvents = await fetchEventsRange(tlFrom, date, 1000);
         syncing = '';
       }, 3000);
     } catch (e) {
@@ -96,13 +130,32 @@
     ...events.filter((e) => e.time_precision === 'day'),
     ...events.filter((e) => e.time_precision !== 'day').sort((a, b) => a.occurred_at - b.occurred_at)
   ]);
-  const incomeTotal = $derived(
-    events.filter((e) => e.event_type === 'transaction' && e.detail?.type === 'income').reduce((s, e) => s + (e.amount_cents ?? 0), 0)
-  );
-  const expenseTotal = $derived(
-    events.filter((e) => e.event_type === 'transaction' && e.detail?.type === 'expense').reduce((s, e) => s + (e.amount_cents ?? 0), 0)
-  );
+  const incomeTotal = $derived(sumBy(events, 'income'));
+  const expenseTotal = $derived(sumBy(events, 'expense'));
   const enabledSources = $derived(sources.filter((s) => s.enabled));
+
+  function sumBy(list: Event[], kind: 'income' | 'expense'): number {
+    return list
+      .filter((e) => e.event_type === 'transaction' && (kind === 'income' ? e.detail?.type === 'income' : e.detail?.type !== 'income'))
+      .reduce((acc, e) => acc + (e.amount_cents ?? 0), 0);
+  }
+
+  // 时间线按日分组，新的日子在前。
+  const tlGroups = $derived.by(() => {
+    const map = new Map<string, Event[]>();
+    for (const e of [...tlEvents].sort((a, b) => b.occurred_at - a.occurred_at)) {
+      const list = map.get(e.local_date);
+      if (list) list.push(e);
+      else map.set(e.local_date, [e]);
+    }
+    return [...map.entries()].map(([day, list]) => ({
+      day,
+      // 组内按时刻升序读起来才顺（日子之间倒序、日子内部正序）。
+      list: list.sort((a, b) => a.occurred_at - b.occurred_at),
+      income: sumBy(list, 'income'),
+      expense: sumBy(list, 'expense')
+    }));
+  });
 </script>
 
 <svelte:head>
@@ -110,8 +163,8 @@
 </svelte:head>
 
 <div class="mx-auto max-w-3xl px-4 py-6">
-  <!-- 顶栏：日期切换 + 今日汇总 -->
-  <header class="mb-5 flex flex-wrap items-center gap-3">
+  <!-- 顶栏：日期切换 + 当日汇总 -->
+  <header class="mb-4 flex flex-wrap items-center gap-3">
     <button class="btn" onclick={() => dayOffset(-1)} aria-label="前一天">←</button>
     <div class="flex items-baseline gap-2">
       <input
@@ -136,12 +189,26 @@
     </div>
   </header>
 
+  <!-- 视图切换：当日 / 日历 / 时间线（偏好记在本地，刷新后保持） -->
+  <div class="mb-4 flex rounded-lg border border-zinc-200 p-0.5 dark:border-zinc-700">
+    {#each ['day', 'calendar', 'timeline'] as v (v)}
+      <button
+        class="flex-1 rounded-md px-2 py-1 text-sm transition-colors {ui.view === v
+          ? 'bg-zinc-900 font-medium text-white dark:bg-zinc-100 dark:text-zinc-900'
+          : 'text-zinc-600 hover:bg-zinc-100 dark:text-zinc-400 dark:hover:bg-zinc-800'}"
+        onclick={() => pickView(v as ViewMode)}
+        aria-pressed={ui.view === v}
+      >
+        {VIEW_LABELS[v as ViewMode]}
+      </button>
+    {/each}
+  </div>
+
   <!-- 源状态行：离线/报错一目了然，可手动触发同步 -->
   {#if enabledSources.length > 0}
     <!--
-      刻意不折行：源数量会随配置涨到 11 个，折行会把「同步全部 / 导出 / 热力图」
-      这三个动作挤到第二行去。改成源 chips 单独横向滚动（滚条藏起来），
-      动作组 shrink-0 钉在右侧，任何视口宽度下都保持一行。
+      刻意不折行：源数量会随配置涨到 11 个，折行会把右侧动作挤到第二行去。
+      源 chips 单独横向滚动（滚条藏起来），动作组 shrink-0 钉在右侧。
     -->
     <div class="mb-4 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
       <div
@@ -173,19 +240,18 @@
           导出
         </a>
       {/if}
-      <button
-        class="shrink-0 rounded-full border px-2 py-0.5 transition-colors {showHeatmap
-          ? 'border-zinc-400 text-zinc-700 dark:text-zinc-200'
-          : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-700'}"
-        onclick={() => (showHeatmap = !showHeatmap)}
-      >
-        {showHeatmap ? '收起热力图' : '热力图'}
-      </button>
+      <a class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" href="/settings">设置</a>
     </div>
   {/if}
 
-  <!-- 日历热力图：月视图，点击格子跳日 -->
-  {#if showHeatmap}
+  {#if error}
+    <div class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+      {error}
+    </div>
+  {/if}
+
+  {#if ui.view === 'calendar'}
+    <!-- 日历视图：整月热力图，点格子进当日 -->
     <div class="mb-4 flex items-start gap-2">
       <button class="btn mt-3" onclick={() => (heatMonth = shiftMonth(heatMonth, -1))} aria-label="上个月">←</button>
       <div class="flex-1">
@@ -200,29 +266,68 @@
       </div>
       <button class="btn mt-3" onclick={() => (heatMonth = shiftMonth(heatMonth, 1))} aria-label="下个月">→</button>
     </div>
-  {/if}
-
-  {#if error}
-    <div class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
-      {error}
+    <p class="text-xs text-zinc-400 dark:text-zinc-500">点任意一天进入当日视图；颜色深浅按当天事件条数。</p>
+  {:else if ui.view === 'timeline'}
+    <!-- 时间线视图：跨日连续流，日子倒序、日内时刻正序 -->
+    <div class="mb-3 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+      <span class="tabular-nums">{tlFrom} ~ {date}（{tlDays} 天）</span>
+      {#if tlLoading}<span>加载中…</span>{/if}
+      <button
+        class="ml-auto shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 disabled:opacity-50 dark:border-zinc-700"
+        onclick={() => (tlDays += TL_STEP)}
+        disabled={tlLoading}
+      >
+        加载更早 {TL_STEP} 天
+      </button>
     </div>
-  {/if}
-
-  <!-- 时间轴 -->
-  {#if loading}
-    <div class="py-16 text-center text-sm text-zinc-400">加载中…</div>
-  {:else if sorted.length === 0}
-    <div class="py-16 text-center text-sm text-zinc-400">
-      这一天还没有数据。
-      {#if range.min}<span class="block mt-1">数据范围 {range.min} ~ {range.max}</span>{/if}
-    </div>
+    {#if tlTruncated}
+      <div class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+        这个窗口内的事件超过 1000 条上限，列表可能不完整——请改用日历逐日查看。
+      </div>
+    {/if}
+    {#if !tlLoading && tlGroups.length === 0}
+      <div class="py-16 text-center text-sm text-zinc-400">
+        这段时间没有数据。{#if range.min}<span class="block mt-1">数据范围 {range.min} ~ {range.max}</span>{/if}
+      </div>
+    {:else}
+      <div class="space-y-6">
+        {#each tlGroups as g (g.day)}
+          <section>
+            <div class="mb-1 flex items-baseline gap-2 border-b border-zinc-200 pb-1 dark:border-zinc-800">
+              <h2 class="text-sm font-medium tabular-nums">{g.day} 周{fmtWeekday(g.day)}</h2>
+              <span class="text-xs tabular-nums text-zinc-400">{g.list.length} 条</span>
+              <span class="ml-auto flex gap-2 text-xs tabular-nums">
+                {#if g.income > 0}<span class="text-emerald-600 dark:text-emerald-400">+¥{(g.income / 100).toFixed(2)}</span>{/if}
+                {#if g.expense > 0}<span class="text-rose-600 dark:text-rose-400">−¥{(g.expense / 100).toFixed(2)}</span>{/if}
+              </span>
+            </div>
+            <div class="relative pl-1">
+              <div class="timeline-rail"></div>
+              {#each g.list as event (event.id)}
+                <EventCard {event} />
+              {/each}
+            </div>
+          </section>
+        {/each}
+      </div>
+    {/if}
   {:else}
-    <div class="relative pl-1">
-      <div class="timeline-rail"></div>
-      {#each sorted as event (event.id)}
-        <EventCard {event} />
-      {/each}
-    </div>
+    <!-- 当日视图：这一天的时间轴 -->
+    {#if loading}
+      <div class="py-16 text-center text-sm text-zinc-400">加载中…</div>
+    {:else if sorted.length === 0}
+      <div class="py-16 text-center text-sm text-zinc-400">
+        这一天还没有数据。
+        {#if range.min}<span class="block mt-1">数据范围 {range.min} ~ {range.max}</span>{/if}
+      </div>
+    {:else}
+      <div class="relative pl-1">
+        <div class="timeline-rail"></div>
+        {#each sorted as event (event.id)}
+          <EventCard {event} />
+        {/each}
+      </div>
+    {/if}
   {/if}
 </div>
 
