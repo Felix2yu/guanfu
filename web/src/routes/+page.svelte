@@ -17,7 +17,7 @@
     triggerSync,
     type Event,
     type SourceState
-  } from '#lib/api';
+  } from '#lib/api.ts';
 
   let date = $state(todayStr());
   let events = $state<Event[]>([]);
@@ -153,8 +153,19 @@
       <button class="rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" onclick={() => sync('all')}>
         同步全部
       </button>
+      {#if range.min}
+        <!-- 一键导出：库里有数据才出现（空库导出是个只会骗人下载的空文件）。 -->
+        <a
+          class="ml-auto rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700"
+          href="/api/v1/export?from={range.min}&to={range.max}"
+          download
+          title="导出 {range.min} ~ {range.max} 的全部事件（JSON）"
+        >
+          导出
+        </a>
+      {/if}
       <button
-        class="ml-auto rounded-full border px-2 py-0.5 transition-colors {showHeatmap
+        class="{range.min ? '' : 'ml-auto '}rounded-full border px-2 py-0.5 transition-colors {showHeatmap
           ? 'border-zinc-400 text-zinc-700 dark:text-zinc-200'
           : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-700'}"
         onclick={() => (showHeatmap = !showHeatmap)}

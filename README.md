@@ -138,6 +138,7 @@ web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 | GET | `/api/v1/events/counts?from=&to=` | 范围内每日事件总数（日历热力图数据源） |
 | GET | `/api/v1/range` | 库日期范围（日历边界） |
 | GET | `/api/v1/sources` | 源同步状态（游标/错误/条数） |
+| GET | `/api/v1/export?from&to&format=json` | 全量或区间导出（流式 JSON，防锁定；页面右上「导出」按钮即此端点） |
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
 | GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
 | GET | `/api/v1/media/bili-history?u=` | 视频封面（回源 bili-history images/proxy） |
@@ -195,6 +196,21 @@ guanfu mcp
 缺前缀即拒）。此时会关掉 mcp-go 的 DNS rebinding 保护——否则「反代到 127.0.0.1 监听 +
 公网 Host」这种正常拓扑会被它 403，而门禁已经由 token 承担。未配 token 时按内网只读放行，
 与既有 `/api/v1/*` 的暴露面同级（观复自身没有任何登录态，见下节安全约定）。
+
+## 导出（防锁定）
+
+`GET /api/v1/export` 把库里的事件原样吐出来，页面右上「导出」按钮就是它（范围取库的实际边界）。
+
+- `from` / `to` 可省略，省略即全库；给了就必须是**有效日期**，`2026-1-5`、`2026-13-45`
+  这种形态像日期但不存在的值一律 400 —— 放过它们只会产出空文件，调用方会误读成
+  "那段时间确实没数据"。
+- `format` 目前只有 `json`，别的值直接拒收（不静默按 json 发）。
+- 逐条流式编码，内存与库大小无关；`ListEvents` 那条 1000 条上限是时间轴的护栏，
+  不是导出的天花板（实测 1050 条一次导全）。
+- `meta` 里带 `generated_at` / `timezone` / 实际范围 / `count` / 金额单位，
+  便于核对"导全了吗、按哪个时区归的日"。
+- `media[].id` 保留各源侧引用（uploads 键、Immich 资产 UUID、B 站封面外链），
+  观复自己的代理路径会剥掉——那些 URL 只在观复跑着时才有意义。
 
 ## 安全约定
 

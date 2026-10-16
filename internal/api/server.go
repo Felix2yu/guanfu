@@ -7,6 +7,7 @@
 //	GET  /api/v1/events/counts   某日各源事件数（date）或范围每日总数（from/to，热力图）
 //	GET  /api/v1/range           库日期范围（日历边界）
 //	GET  /api/v1/sources         源同步状态
+//	GET  /api/v1/export          全量/区间导出（JSON，流式；防锁定）
 //	POST /api/v1/sync/{source}   手动同步（{source}=all 表示全部）
 //	GET  /api/v1/media/...       媒体代理（见 media.go）
 package api
@@ -48,6 +49,7 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/events/counts", s.handleCounts)
 	s.mux.HandleFunc("GET /api/v1/range", s.handleRange)
 	s.mux.HandleFunc("GET /api/v1/sources", s.handleSources)
+	s.mux.HandleFunc("GET /api/v1/export", s.handleExport)
 	s.mux.HandleFunc("POST /api/v1/sync/{source}", s.handleSync)
 	s.media.Routes(s.mux)
 }
