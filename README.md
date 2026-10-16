@@ -36,6 +36,10 @@ amd64 / arm64 已合成多架构 manifest，服务器直接拉取即可：
 
 ```bash
 cp .env.example .env      # 填各数据源 BASE_URL / KEY
+
+# 本仓库与 GHCR 包都是私有的，服务器上需先用具备 read:packages 的 PAT 登录一次
+echo "$GHCR_PAT" | docker login ghcr.io -u Felix2yu --password-stdin
+
 docker compose pull && docker compose up -d
 # 打开 http://<服务器地址>:8788
 ```
