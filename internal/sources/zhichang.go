@@ -93,9 +93,9 @@ func (z *ZhichangSource) metrics() []string {
 }
 
 type zhichangDailyResp struct {
-	From   string                            `json:"from"`
-	To     string                            `json:"to"`
-	Series map[string][]zhichangDailyPoint    `json:"series"`
+	From   string                          `json:"from"`
+	To     string                          `json:"to"`
+	Series map[string][]zhichangDailyPoint `json:"series"`
 }
 
 type zhichangDailyPoint struct {
@@ -215,7 +215,7 @@ func (z *ZhichangSource) units(ctx context.Context, metrics []string) map[string
 	body, _ := io.ReadAll(io.LimitReader(resp.Body, 4<<20))
 	var mr struct {
 		Metrics []struct {
-			Metric       string `json:"metric"`
+			Metric        string `json:"metric"`
 			DisplayNameZh string `json:"display_name_zh"`
 			PreferredUnit string `json:"preferred_unit"`
 		} `json:"metrics"`

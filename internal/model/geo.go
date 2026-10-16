@@ -50,8 +50,8 @@ func WGS84ToGCJ02(lat, lng float64) (float64, float64) {
 	magic := math.Sin(radLat)
 	magic = 1 - geoEE*magic*magic
 	sqrtMagic := math.Sqrt(magic)
-	dLat = (dLat * 180.0) / ((geoA*(1-geoEE))/(magic*sqrtMagic) * math.Pi)
-	dLng = (dLng * 180.0) / (geoA/sqrtMagic*math.Cos(radLat) * math.Pi)
+	dLat = (dLat * 180.0) / ((geoA * (1 - geoEE)) / (magic * sqrtMagic) * math.Pi)
+	dLng = (dLng * 180.0) / (geoA / sqrtMagic * math.Cos(radLat) * math.Pi)
 	return lat + dLat, lng + dLng
 }
 

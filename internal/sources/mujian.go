@@ -58,14 +58,14 @@ func (m *MujianSource) Interval() time.Duration {
 }
 
 type mujianRecord struct {
-	ID         uint    `json:"id"`
-	Name       string  `json:"name"`
-	Date       int64   `json:"date"` // unix 秒（mujian 本地时间基准）
-	City       string  `json:"city"`
-	Address    string  `json:"address"`
-	Rating     int     `json:"rating"`
-	CoverFile  string  `json:"coverFile"`
-	CoverThumb string  `json:"coverThumb"`
+	ID         uint   `json:"id"`
+	Name       string `json:"name"`
+	Date       int64  `json:"date"` // unix 秒（mujian 本地时间基准）
+	City       string `json:"city"`
+	Address    string `json:"address"`
+	Rating     int    `json:"rating"`
+	CoverFile  string `json:"coverFile"`
+	CoverThumb string `json:"coverThumb"`
 	Coordinate *struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`

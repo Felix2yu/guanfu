@@ -350,7 +350,7 @@ func TestBiliHistorySyncDateRangeAndMedia(t *testing.T) {
 				"records": []map[string]any{
 					{
 						"title": "测试视频", "bvid": "BV1xx411c7mD", "author_name": "测试UP",
-						"view_at": time.Date(2026, 10, 15, 21, 30, 0, 0, model.LocalLocation()).Unix(),
+						"view_at":  time.Date(2026, 10, 15, 21, 30, 0, 0, model.LocalLocation()).Unix(),
 						"duration": 600, "tag_name": "科技", "cover": "https://i0.hdslb.com/cover.jpg",
 						"progress": 300,
 					},

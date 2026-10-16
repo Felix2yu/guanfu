@@ -202,9 +202,9 @@ func TestProxyPathFor(t *testing.T) {
 		{"mujian", "covers/../a", ""},
 		{"mujian", "/etc/passwd", ""},
 		{"bili-history", "https://i0.hdslb.com/a.jpg", "/api/v1/media/bili-history?u=https%3A%2F%2Fi0.hdslb.com%2Fa.jpg"},
-		{"bili-history", "http://i0.hdslb.com/a.jpg", ""},   // 必须 https
+		{"bili-history", "http://i0.hdslb.com/a.jpg", ""},        // 必须 https
 		{"bili-history", "https://sub.hdslb.com.evil.com/x", ""}, // 后缀伪装
-		{"zhichang", "whatever", ""},                        // 无代理分支
+		{"zhichang", "whatever", ""},                             // 无代理分支
 		// immich：UUID 才放行（防路径穿越/注入）。
 		{"immich", "3b37059b-8e63-4d93-a254-7e02dd6a4d29", "/api/v1/media/immich/3b37059b-8e63-4d93-a254-7e02dd6a4d29"},
 		{"immich", "../../etc/passwd", ""},
