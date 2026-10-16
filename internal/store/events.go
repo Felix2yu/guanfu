@@ -67,9 +67,14 @@ type EventQuery struct {
 	To        string // local_date <= To
 	Source    string
 	EventType string
-	Limit     int
-	Offset    int
+	// Query 标题/摘要子串检索（MCP 用）。按字面量匹配，% 与 _ 不作为通配符。
+	Query  string
+	Limit  int
+	Offset int
 }
+
+// likeEscaper 把用户输入里的 LIKE 元字符还原成字面量，否则搜 "100%" 会命中任意以 100 开头的标题。
+var likeEscaper = strings.NewReplacer(`\`, `\\`, `%`, `\%`, `_`, `\_`)
 
 // ListEvents 按条件查询事件，按 occurred_at 正序（当天内按时刻排列）。
 func (s *Store) ListEvents(q EventQuery) ([]*model.Event, error) {
@@ -96,6 +101,10 @@ func (s *Store) ListEvents(q EventQuery) ([]*model.Event, error) {
 	if q.EventType != "" {
 		conds = append(conds, "event_type = ?")
 		args = append(args, q.EventType)
+	}
+	if q.Query != "" {
+		conds = append(conds, likeConds(q.Query))
+		args = append(args, likeArgs(q.Query)...)
 	}
 	where := ""
 	if len(conds) > 0 {
@@ -236,7 +245,8 @@ func (s *Store) GetSourceState(name string) (SourceState, error) {
 }
 
 // ListSourceStates 列出所有源的同步状态。
-func (s *Store) ListSourceStates() ([]SourceState, error) {	rows, err := s.DB.Query(`SELECT name, enabled, interval_secs, cursor, last_sync_at, last_error, last_count FROM sources ORDER BY name`)
+func (s *Store) ListSourceStates() ([]SourceState, error) {
+	rows, err := s.DB.Query(`SELECT name, enabled, interval_secs, cursor, last_sync_at, last_error, last_count FROM sources ORDER BY name`)
 	if err != nil {
 		return nil, err
 	}

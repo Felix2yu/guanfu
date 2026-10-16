@@ -78,6 +78,8 @@ cd web && pnpm install && pnpm dev
 | `GUANFU_TZ` | `Asia/Shanghai` | 本地时区（local_date 归日） |
 | `GUANFU_STATIC_DIR` | `./web/dist` | 磁盘前端目录（存在则优先于内嵌） |
 | `GUANFU_SYNC_ENABLED` | `1` | 同步引擎总开关 |
+| `GUANFU_MCP_ENABLED` | `1` | 只读 MCP server（挂在 `/mcp`）总开关 |
+| `GUANFU_MCP_TOKEN` | — | 非空时 `/mcp` 要求 `Authorization: Bearer <token>`；stdio 不需要 |
 | `HUOZHI_BASE_URL` / `HUOZHI_API_KEY` | — | 货殖记账（`X-API-Key` 认证） |
 | `HUOZHI_INTERVAL` | `30m` | 同步间隔 |
 | `HUOZHI_LOOKBACK_DAYS` | `90` | 首轮无游标时的回溯天数 |
@@ -105,6 +107,7 @@ internal/
   sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离
   sources/          数据源适配器（huozhi/mujian/diarum/immich/zhichang/dawarich/bili-history/qiansi/shenshi/liuxia）
   api/              REST API（/api/v1/events 等）+ 媒体代理
+  mcp/              只读 MCP server：5 个查询/聚合工具，HTTP(/mcp) 与 stdio 两种传输
   web/              前端托管：磁盘目录优先，go:embed 内嵌兜底（all:dist）
 web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 ```
@@ -137,12 +140,65 @@ web/                SvelteKit 5 SPA（时间轴 + 日历热力图）
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
 | GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
 | GET | `/api/v1/media/bili-history?u=` | 视频封面（回源 bili-history images/proxy） |
+| POST | `/mcp` | 只读 MCP server（Streamable HTTP，见下节） |
+
+## MCP（只读）
+
+让 AI 客户端直接问「上周看了几场演出」「这个月花了多少钱」。工具全部只读，
+只有查询与聚合，没有同步触发、写入或凭据类工具。
+
+| 工具 | 参数 | 返回 |
+|---|---|---|
+| `guanfu_range` | — | 库覆盖日期、总条数、各源条数 |
+| `guanfu_timeline` | `date`（必填）、`limit` | 当日收支合计 + 全天事件 + 时刻流明细 |
+| `guanfu_stats` | `from`/`to`（必填）、`group_by`、`source`、`event_type` | 区间按 source/event_type/day/month 的条数与收支合计 |
+| `guanfu_events` | `from`/`to`（必填）、`source`、`event_type`、`q`、`limit`、`offset` | 关键词与条件检索的明细 + 同口径 total_count |
+| `guanfu_sources` | — | 各源启用/间隔/游标/上次同步距今/错误 |
+
+约定（写进返回值，避免模型自行脑补）：
+
+- 日期只认 `YYYY-MM-DD`，`2026-10-1`、RFC3339、unix 秒一律拒绝并回示例；
+- 金额单位一律**分**（`amount_cents`），返回体自带 `amount_unit`；
+- 收支口径 `totals_rule`：`detail.type == "income"` 记收入，其余带金额事件记支出
+  （huozhi 的转账/报销因此也进支出，与网页时间轴顶栏同口径）；
+- 币种分桶返回，不同币种绝不加进同一个数；
+- 明细带 `returned`/`truncated`，`limit` 截断时不会让模型把部分当全部；
+- 返回体不含 `detail_json` 与媒体 URL（长尾字段动辄几 KB，图片须走观复代理）。
+
+两种传输：
+
+```bash
+# 1) Streamable HTTP：随主服务启动，默认开启。
+#    有状态会话：先 initialize 拿 Mcp-Session-Id，后续请求都要带上它。
+SID=$(curl -sD- -o/dev/null -X POST http://127.0.0.1:8788/mcp \
+  -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":1,"method":"initialize","params":{"protocolVersion":"2025-03-26","capabilities":{},"clientInfo":{"name":"curl","version":"1"}}}' \
+  | grep -i '^mcp-session-id' | tr -d '\r' | awk '{print $2}')
+
+curl -sX POST http://127.0.0.1:8788/mcp \
+  -H "Mcp-Session-Id: $SID" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","method":"notifications/initialized"}'
+
+curl -sX POST http://127.0.0.1:8788/mcp \
+  -H "Mcp-Session-Id: $SID" -H 'Content-Type: application/json' -H 'Accept: application/json, text/event-stream' \
+  -d '{"jsonrpc":"2.0","id":2,"method":"tools/call","params":
+       {"name":"guanfu_stats","arguments":{"from":"2026-10-01","to":"2026-10-31","group_by":"event_type"}}}'
+
+# 2) stdio：供 Claude Desktop 一类本地客户端直连，不起 HTTP、不启同步引擎
+guanfu mcp
+```
+
+配了 `GUANFU_MCP_TOKEN` 时 HTTP 侧要求 `Authorization: Bearer <token>`（定长时间比较，
+缺前缀即拒）。此时会关掉 mcp-go 的 DNS rebinding 保护——否则「反代到 127.0.0.1 监听 +
+公网 Host」这种正常拓扑会被它 403，而门禁已经由 token 承担。未配 token 时按内网只读放行，
+与既有 `/api/v1/*` 的暴露面同级（观复自身没有任何登录态，见下节安全约定）。
 
 ## 安全约定
 
 - 所有 API key 只经环境变量传入；**不写入仓库、不写入文档、不进镜像层**
 - 各源 key 均为全权凭证（huozhi/mujian/dawarich/immich 概莫如此），观复只发 GET 请求
 - 媒体代理做路径穿越防护（mujian key 字符集 + `..` 拒绝）与 SSRF 防护（bili 封面仅限 `*.hdslb.com` + https）
+- MCP 只有 5 个只读查询工具，且返回体刻意剥掉 `detail_json` 与媒体路径；要收紧就在 `GUANFU_MCP_TOKEN` 配一个值，或 `GUANFU_MCP_ENABLED=0` 整条关掉
 - SQLite 文件位于 `/data` 卷，纳入既有备份体系（docker-db-auto-backup）
 
 ## 开发
