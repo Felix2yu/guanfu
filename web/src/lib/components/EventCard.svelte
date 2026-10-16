@@ -36,6 +36,16 @@
       .slice(0, 4);
   });
 
+  // 习惯打卡（habit_check）：习惯名 chips，次数 >1 显示 ×n。
+  const habitChips = $derived.by(() => {
+    if (event.event_type !== 'habit_check' || !event.detail) return [];
+    const list = event.detail.habits;
+    if (!Array.isArray(list)) return [];
+    return (list as { name?: string; count?: number }[])
+      .filter((h) => h.name)
+      .map((h) => ({ name: String(h.name), count: Number(h.count ?? 1) }));
+  });
+
   // 到访（location_visit）：无地名时展示坐标兜底。
   const coordText = $derived(
     event.event_type === 'location_visit' && !event.location_name && (event.latitude || event.longitude)
@@ -149,6 +159,15 @@
         {#each healthChips as chip (chip.key)}
           <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
             {chip.label} {chip.display}
+          </span>
+        {/each}
+      </div>
+    {/if}
+    {#if habitChips.length > 0}
+      <div class="mt-1 flex flex-wrap gap-1">
+        {#each habitChips as chip (chip.name)}
+          <span class="rounded bg-lime-50 px-1.5 py-0.5 text-[11px] text-lime-700 dark:bg-lime-950/50 dark:text-lime-300">
+            {chip.name}{#if chip.count > 1}<span class="ml-0.5 tabular-nums text-lime-600/80 dark:text-lime-400/80">×{chip.count}</span>{/if}
           </span>
         {/each}
       </div>

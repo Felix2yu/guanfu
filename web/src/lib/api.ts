@@ -114,7 +114,8 @@ export const SOURCE_META: Record<string, { label: string; dot: string; text: str
   immich: { label: '照片', dot: 'bg-fuchsia-500', text: 'text-fuchsia-600 dark:text-fuchsia-400' },
   'bili-history': { label: '观影', dot: 'bg-cyan-500', text: 'text-cyan-600 dark:text-cyan-400' },
   qiansi: { label: '人情', dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400' },
-  shenshi: { label: '任务', dot: 'bg-lime-600', text: 'text-lime-700 dark:text-lime-400' }
+  shenshi: { label: '任务', dot: 'bg-lime-600', text: 'text-lime-700 dark:text-lime-400' },
+  liuxia: { label: '天象', dot: 'bg-indigo-500', text: 'text-indigo-600 dark:text-indigo-400' }
 };
 
 // 事件类型中文标签。
@@ -130,7 +131,12 @@ export const TYPE_LABEL: Record<string, string> = {
   location_day: '足迹',
   video_watch: '观影',
   social_event: '人情',
-  task_done: '任务'
+  task_done: '任务',
+  gift_money: '礼金',
+  anniversary: '纪念日',
+  review: '复盘',
+  habit_check: '打卡',
+  sky_forecast: '霞光'
 };
 
 export function fmtTime(ts: number): string {

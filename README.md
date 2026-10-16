@@ -68,6 +68,9 @@ cd web && pnpm install && pnpm dev
 | `BILI_HISTORY_BASE_URL` | — | 拾帧集观看历史（REST 零鉴权，**无需 key**） |
 | `DIARUM_BASE_URL` / `DIARUM_API_KEY` | — | 吾身日记（Bearer JWT，或 `用户名:密码` 自动登录换 JWT） |
 | `IMMICH_BASE_URL` / `IMMICH_API_KEY` | — | Immich 照片（`x-api-key`，只读 key 按天聚合为 photo 事件） |
+| `QIANSI_BASE_URL` / `QIANSI_API_KEY` | — | 牵丝人情往来（往来事件/礼金/纪念日；未配 token 的实例放通） |
+| `SHENSHI_BASE_URL` / `SHENSHI_API_KEY` | — | 慎始任务（任务完成/复盘/习惯打卡；未配 token 的实例放通） |
+| `LIUXIA_BASE_URL` | — | 流霞霞光预报（REST 零鉴权，**无需 key**） |
 
 各源**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；默认回溯天数：mujian 365 / diarum 365 / zhichang 30 / dawarich 30 / bili-history 90 / immich 365（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
 

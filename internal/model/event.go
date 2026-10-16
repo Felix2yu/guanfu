@@ -14,18 +14,25 @@ import "time"
 
 // 事件类型常量。新增数据源时优先复用既有类型，类型爆炸会让时间轴筛选失去意义。
 const (
-	EventTransaction = "transaction" // 记账流水（huozhi）
-	EventPerformance = "performance" // 演出/观影现场（mujian）
-	EventDiary       = "diary"       // 日记（diarum）
-	EventHealthDay   = "health_day"  // 健康日汇总（zhichang，一条/天）
-	EventHealthSleep = "health_sleep"
+	EventTransaction   = "transaction" // 记账流水（huozhi）
+	EventPerformance   = "performance" // 演出/观影现场（mujian）
+	EventDiary         = "diary"       // 日记（diarum）
+	EventHealthDay     = "health_day"  // 健康日汇总（zhichang，一条/天）
+	EventHealthSleep   = "health_sleep"
 	EventHealthWorkout = "health_workout"
-	EventPhoto       = "photo"          // 照片（immich）
+	EventPhoto         = "photo"          // 照片（immich）
 	EventLocationVisit = "location_visit" // 到访（dawarich visit）
 	EventLocationDay   = "location_day"   // 到访日汇总（dawarich journeys 聚合）
-	EventVideoWatch  = "video_watch"   // B 站观看（bili-history）
-	EventSocialEvent = "social_event"  // 人情往来（qiansi）
-	EventTaskDone    = "task_done"     // 任务完成（shenshi）
+	EventVideoWatch    = "video_watch"    // B 站观看（bili-history）
+	EventSocialEvent   = "social_event"   // 人情往来（qiansi）
+	EventTaskDone      = "task_done"      // 任务完成（shenshi）
+
+	// M4 增值源
+	EventGiftMoney   = "gift_money"   // 礼金收付（qiansi 交易）
+	EventAnniversary = "anniversary"  // 纪念日/生日（qiansi）
+	EventReview      = "review"       // 每日复盘（shenshi）
+	EventHabitCheck  = "habit_check"  // 习惯打卡（shenshi，按天聚合）
+	EventSkyForecast = "sky_forecast" // 朝霞/晚霞预报（liuxia，按天聚合）
 )
 
 // 时间精度：second=时刻流，day=全天分区（日记、健康汇总等无具体时刻的事件）。
@@ -98,12 +105,15 @@ func (e *Event) HasLatLng() bool {
 }
 
 // NewDayEvent 构造一条全天事件的便捷方法（时刻固定为当地中午）。
+// 中午而非零点：全天事件在按时刻排序的时间轴里落在"当天中段"，
+// 与 zhichang/dawarich 的日汇总口径一致（否则会一律挤到 00:00 最前）。
 func NewDayEvent(source, externalID, eventType, localDate string) *Event {
 	loc := LocalLocation()
-	noon, err := time.ParseInLocation("2006-01-02", localDate, loc)
+	day, err := time.ParseInLocation("2006-01-02", localDate, loc)
 	if err != nil {
-		noon = time.Now().In(loc)
+		day = time.Now().In(loc)
 	}
+	noon := time.Date(day.Year(), day.Month(), day.Day(), 12, 0, 0, 0, loc)
 	return &Event{
 		Source:        source,
 		ExternalID:    externalID,

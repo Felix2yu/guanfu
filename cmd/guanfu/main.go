@@ -46,6 +46,9 @@ func main() {
 	registry.Register(sources.NewDawarichSource(cfg.Sources["dawarich"]))
 	registry.Register(sources.NewImmichSource(cfg.Sources["immich"]))
 	registry.Register(sources.NewBiliHistorySource(cfg.Sources["bili-history"]))
+	registry.Register(sources.NewQiansiSource(cfg.Sources["qiansi"]))
+	registry.Register(sources.NewShenshiSource(cfg.Sources["shenshi"]))
+	registry.Register(sources.NewLiuxiaSource(cfg.Sources["liuxia"]))
 
 	// 启用判定：配置了 BaseURL 即参与调度；各适配器自行校验额外必需项
 	// （如 key），缺失时以 last_error 形式暴露在 /api/v1/sources，不静默跳过。
@@ -80,8 +83,11 @@ func main() {
 
 	if cfg.SyncEnabled {
 		engine.Start(ctx)
-		active := make([]string, 0, 7)
-		for _, n := range []string{"huozhi", "mujian", "diarum", "zhichang", "dawarich", "immich", "bili-history"} {
+		active := make([]string, 0, 10)
+		for _, n := range []string{
+			"huozhi", "mujian", "diarum", "zhichang", "dawarich", "immich", "bili-history",
+			"qiansi", "shenshi", "liuxia",
+		} {
 			if sc := cfg.Sources[n]; sc.Enabled && sc.BaseURL != "" {
 				if a, ok := registry.Get(n); ok {
 					active = append(active, fmt.Sprintf("%s(%s)", n, a.Interval()))

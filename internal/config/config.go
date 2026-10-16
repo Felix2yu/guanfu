@@ -61,6 +61,9 @@ func Load() *Config {
 		"dawarich":     30,  // 位置：数据密集
 		"bili-history": 90,  // 观看历史
 		"immich":       365, // 照片：按天聚合，回溯一年
+		"qiansi":       180, // 人情往来：手工录入，半年回溯
+		"shenshi":      90,  // 任务/习惯/复盘：季度回溯
+		"liuxia":       30,  // 天象预报：时效性数据，一月足够
 	}
 	cfg.Sources["huozhi"] = SourceConfig{
 		BaseURL:      strings.TrimRight(os.Getenv("HUOZHI_BASE_URL"), "/"),
@@ -69,9 +72,12 @@ func Load() *Config {
 		Interval:     getenvDuration("HUOZHI_INTERVAL", 30*time.Minute),
 		LookbackDays: getenvInt("HUOZHI_LOOKBACK_DAYS", lookback["huozhi"]),
 	}
-	// 其余源（mujian/diarum/zhichang/dawarich/bili-history/immich）按同样
-	// 模式注册；未配置 BaseURL 的源不参与调度，也不会在状态里报错。
-	for _, name := range []string{"mujian", "diarum", "zhichang", "dawarich", "bili-history", "immich"} {
+	// 其余源按同样模式注册；未配置 BaseURL 的源不参与调度，也不会在状态里报错。
+	// M4 增值源：qiansi（人情往来）/ shenshi（任务复盘）/ liuxia（霞光预报）。
+	for _, name := range []string{
+		"mujian", "diarum", "zhichang", "dawarich", "bili-history", "immich",
+		"qiansi", "shenshi", "liuxia",
+	} {
 		upper := strings.ToUpper(name)
 		base := strings.TrimRight(os.Getenv(upper+"_BASE_URL"), "/")
 		key := os.Getenv(upper + "_API_KEY")
