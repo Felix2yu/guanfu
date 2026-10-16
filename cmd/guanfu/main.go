@@ -85,10 +85,13 @@ func main() {
 
 	// 启用判定：配置了 BaseURL 即参与调度；各适配器自行校验额外必需项
 	// （如 key），缺失时以 last_error 形式暴露在 /api/v1/sources，不静默跳过。
-	engine := sync.NewEngine(st, registry, func(name string) bool {
+	// 这个判定被引擎调度和启动日志共用——两处口径必须一致，否则日志里"已启动"
+	// 但实际没跑（或反之）会比报错更难查。
+	isActive := func(name string) bool {
 		sc, ok := cfg.Sources[name]
 		return ok && sc.Enabled && sc.BaseURL != ""
-	})
+	}
+	engine := sync.NewEngine(st, registry, isActive)
 
 	apiServer := api.NewServer(st, engine, cfg.Sources)
 
@@ -131,15 +134,16 @@ func main() {
 
 	if cfg.SyncEnabled {
 		engine.Start(ctx)
-		active := make([]string, 0, 10)
-		for _, n := range []string{
-			"huozhi", "mujian", "diarum", "zhichang", "dawarich", "immich", "bili-history",
-			"qiansi", "shenshi", "liuxia",
-		} {
-			if sc := cfg.Sources[n]; sc.Enabled && sc.BaseURL != "" {
-				if a, ok := registry.Get(n); ok {
-					active = append(active, fmt.Sprintf("%s(%s)", n, a.Interval()))
-				}
+		// 名单直接来自注册表，不再手抄第二遍（抄两遍必漏抄一遍）。
+		active := make([]string, 0, 12)
+		for _, a := range registry.All() {
+			if _, ok := cfg.Sources[a.Name()]; !ok {
+				// 注册了适配器但 config 没登记这个源名：isActive 恒为 false，源静默不跑。
+				log.Printf("警告：%s 已注册但没有对应的 env 配置项（internal/config 的源清单漏登记），不会参与调度", a.Name())
+				continue
+			}
+			if isActive(a.Name()) {
+				active = append(active, fmt.Sprintf("%s(%s)", a.Name(), a.Interval()))
 			}
 		}
 		log.Printf("同步引擎已启动：%s", strings.Join(active, " "))
