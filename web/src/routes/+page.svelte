@@ -138,25 +138,34 @@
 
   <!-- 源状态行：离线/报错一目了然，可手动触发同步 -->
   {#if enabledSources.length > 0}
-    <div class="mb-4 flex flex-wrap items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
-      {#each enabledSources as s (s.name)}
-        <button
-          class="flex items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 transition-colors hover:border-zinc-400 dark:border-zinc-700"
-          onclick={() => sync(s.name)}
-          disabled={syncing === s.name}
-          title={s.last_error || `游标 ${s.cursor || '—'} · 上次同步 ${s.last_sync_at ? new Date(s.last_sync_at * 1000).toLocaleString() : '从未'}`}
-        >
-          <span class="h-1.5 w-1.5 rounded-full {s.last_error ? 'bg-rose-500' : 'bg-emerald-500'}"></span>
-          {s.name}{syncing === s.name ? ' …' : ''}
-        </button>
-      {/each}
-      <button class="rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" onclick={() => sync('all')}>
+    <!--
+      刻意不折行：源数量会随配置涨到 11 个，折行会把「同步全部 / 导出 / 热力图」
+      这三个动作挤到第二行去。改成源 chips 单独横向滚动（滚条藏起来），
+      动作组 shrink-0 钉在右侧，任何视口宽度下都保持一行。
+    -->
+    <div class="mb-4 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
+      <div
+        class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+      >
+        {#each enabledSources as s (s.name)}
+          <button
+            class="flex shrink-0 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 transition-colors hover:border-zinc-400 dark:border-zinc-700"
+            onclick={() => sync(s.name)}
+            disabled={syncing === s.name}
+            title={s.last_error || `游标 ${s.cursor || '—'} · 上次同步 ${s.last_sync_at ? new Date(s.last_sync_at * 1000).toLocaleString() : '从未'}`}
+          >
+            <span class="h-1.5 w-1.5 rounded-full {s.last_error ? 'bg-rose-500' : 'bg-emerald-500'}"></span>
+            {s.name}{syncing === s.name ? ' …' : ''}
+          </button>
+        {/each}
+      </div>
+      <button class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" onclick={() => sync('all')}>
         同步全部
       </button>
       {#if range.min}
         <!-- 一键导出：库里有数据才出现（空库导出是个只会骗人下载的空文件）。 -->
         <a
-          class="ml-auto rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700"
+          class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700"
           href="/api/v1/export?from={range.min}&to={range.max}"
           download
           title="导出 {range.min} ~ {range.max} 的全部事件（JSON）"
@@ -165,7 +174,7 @@
         </a>
       {/if}
       <button
-        class="{range.min ? '' : 'ml-auto '}rounded-full border px-2 py-0.5 transition-colors {showHeatmap
+        class="shrink-0 rounded-full border px-2 py-0.5 transition-colors {showHeatmap
           ? 'border-zinc-400 text-zinc-700 dark:text-zinc-200'
           : 'border-zinc-200 hover:border-zinc-400 dark:border-zinc-700'}"
         onclick={() => (showHeatmap = !showHeatmap)}
