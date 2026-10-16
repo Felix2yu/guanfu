@@ -17,6 +17,7 @@ import (
 	"log"
 	"net/http"
 	"regexp"
+	"sort"
 	"strconv"
 	"time"
 
@@ -27,15 +28,16 @@ import (
 
 // Server API 服务。
 type Server struct {
-	store  *store.Store
-	engine *sync.Engine
-	media  *MediaProxy
-	mux    *http.ServeMux
+	store   *store.Store
+	engine  *sync.Engine
+	media   *MediaProxy
+	mux     *http.ServeMux
+	sources map[string]config.SourceConfig
 }
 
-// NewServer 创建 API 服务并注册路由。sources 用于媒体代理回源。
+// NewServer 创建 API 服务并注册路由。sources 用于媒体代理回源与设置页展示配置状态。
 func NewServer(st *store.Store, engine *sync.Engine, sources map[string]config.SourceConfig) *Server {
-	s := &Server{store: st, engine: engine, mux: http.NewServeMux()}
+	s := &Server{store: st, engine: engine, mux: http.NewServeMux(), sources: sources}
 	s.media = NewMediaProxy(sources)
 	s.routes()
 	return s
@@ -152,13 +154,82 @@ func (s *Server) handleRange(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": map[string]string{"min": min, "max": max}})
 }
 
+// sourceView 设置页要看的：同步状态 + 连接配置（**永不含凭据值**，只给"配没配、配在哪"）。
+type sourceView struct {
+	store.SourceState
+	BaseURL       string `json:"base_url"`
+	BaseURLEnv    string `json:"base_url_env"`
+	Auth          string `json:"auth"`
+	CredentialEnv string `json:"credential_env"`
+	CredentialSet bool   `json:"credential_set"`
+	// Configured = 端点已填且凭据满足要求，即"这一源能跑起来了"。
+	Configured bool `json:"configured"`
+}
+
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	states, err := s.store.ListSourceStates()
 	if err != nil {
 		writeErr(w, http.StatusInternalServerError, "查询失败: "+err.Error())
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": states})
+	byName := make(map[string]store.SourceState, len(states))
+	for _, st := range states {
+		byName[st.Name] = st
+	}
+	// 配置里的源 + 库里出现过的源都要列出来：只同步过一次或从没跑过的源，
+	// 在设置页消失等于让用户以为"没配上"。
+	names := make([]string, 0, len(s.sources)+len(states))
+	seen := map[string]bool{}
+	for name := range s.sources {
+		if !seen[name] {
+			seen[name] = true
+			names = append(names, name)
+		}
+	}
+	for _, st := range states {
+		if !seen[st.Name] {
+			seen[st.Name] = true
+			names = append(names, st.Name)
+		}
+	}
+	sort.Strings(names)
+
+	out := make([]sourceView, 0, len(names))
+	for _, name := range names {
+		cfg, hasCfg := s.sources[name]
+		st := byName[name]
+		v := sourceView{
+			BaseURL:       cfg.BaseURL,
+			BaseURLEnv:    config.BaseURLEnv(name),
+			Auth:          config.AuthKind(name),
+			CredentialEnv: config.CredentialEnv(name),
+			CredentialSet: cfg.APIKey != "",
+		}
+		v.SourceState = st
+		if v.Name == "" {
+			v.Name = name
+		}
+		if hasCfg {
+			// 从没跑过的源库里没有行，enabled/interval 直接按配置给。
+			v.Enabled = cfg.Enabled && cfg.BaseURL != ""
+			if st.IntervalSecs == 0 && cfg.Interval > 0 {
+				v.IntervalSecs = int(cfg.Interval.Seconds())
+			}
+		}
+		v.Configured = cfg.BaseURL != "" && (v.Auth == config.AuthNone || v.CredentialSet || hasOptionalCred(name))
+		out = append(out, v)
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": out})
+}
+
+// hasOptionalCred 这些源的 token 是可选的（服务端没配 token 时直接放通），
+// 不能因为没填凭据就在设置页标成"没配好"。
+func hasOptionalCred(name string) bool {
+	switch name {
+	case "mujian", "qiansi", "shenshi":
+		return true
+	}
+	return false
 }
 
 func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {

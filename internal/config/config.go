@@ -46,6 +46,49 @@ type SourceConfig struct {
 	Metrics string
 }
 
+// 认证方式（供设置页展示"这个源要怎么配凭据"，不含任何密钥值）。
+const (
+	AuthNone   = "none"    // 零鉴权，不需要 key
+	AuthAPIKey = "api_key" // 自定义头（huozhi X-API-Key / immich x-api-key）
+	AuthBearer = "bearer"  // Authorization: Bearer <key>
+	AuthJWT    = "jwt"     // Authorization: Bearer <HS256 JWT>，可填 JWT 或 用户名:密码
+	AuthToken  = "token"   // 源自己的 token 形态（mujian 三形态 / qiansi、shenshi 可选 Bearer）
+)
+
+// authKinds 各源的认证方式。与适配器实现保持一致——改适配器认证方式必须同步这里，
+// 否则设置页会告诉用户"填 X-API-Key 头"而实际发的是 Bearer。
+var authKinds = map[string]string{
+	"huozhi":       AuthAPIKey,
+	"mujian":       AuthToken,
+	"diarum":       AuthJWT,
+	"zhichang":     AuthNone,
+	"dawarich":     AuthBearer,
+	"immich":       AuthAPIKey,
+	"bili-history": AuthNone,
+	"qiansi":       AuthBearer,
+	"shenshi":      AuthBearer,
+	"liuxia":       AuthNone,
+	"qingye":       AuthNone,
+}
+
+// AuthKind 返回该源的认证方式；未知源按 bearer 兜底（最保守的假设）。
+func AuthKind(name string) string {
+	if k, ok := authKinds[name]; ok {
+		return k
+	}
+	return AuthBearer
+}
+
+// CredentialEnv 返回该源凭据的环境变量名（凭据只从 env 读，见 README 安全约定）。
+func CredentialEnv(name string) string {
+	return strings.ToUpper(name) + "_API_KEY"
+}
+
+// BaseURLEnv 返回该源端点的环境变量名。
+func BaseURLEnv(name string) string {
+	return strings.ToUpper(name) + "_BASE_URL"
+}
+
 // Load 从环境变量构建配置。
 func Load() *Config {
 	cfg := &Config{
