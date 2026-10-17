@@ -62,7 +62,7 @@
     <span class="tabular-nums">{Object.values(counts).reduce((a, b) => a + b, 0)} 条</span>
   </div>
   <div class="grid grid-cols-7 gap-1">
-    {#each ['一', '二', '三', '四', '五', '六', '日'] as w}
+    {#each ['一', '二', '三', '四', '五', '六', '日'] as w (w)}
       <div class="text-center text-[10px] text-zinc-400 dark:text-zinc-500">{w}</div>
     {/each}
     {#each cells as cell, i (i)}

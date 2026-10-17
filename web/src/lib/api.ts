@@ -70,7 +70,12 @@ export function fetchEvents(date: string): Promise<Event[]> {
 }
 
 /** 时间线视图：跨日取一段事件（按 occurred_at 升序）。 */
-export function fetchEventsRange(from: string, to: string, limit = 200, offset = 0): Promise<Event[]> {
+export function fetchEventsRange(
+  from: string,
+  to: string,
+  limit = 200,
+  offset = 0
+): Promise<Event[]> {
   const q = new URLSearchParams({ from, to, limit: String(limit), offset: String(offset) });
   return get<Event[]>(`/api/v1/events?${q.toString()}`);
 }
@@ -81,7 +86,9 @@ export function fetchRange(): Promise<{ min: string; max: string }> {
 
 /** 日历热力图数据源：范围内每日事件总数 { 'YYYY-MM-DD': n } */
 export function fetchCountsRange(from: string, to: string): Promise<Record<string, number>> {
-  return get<Record<string, number>>(`/api/v1/events/counts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`);
+  return get<Record<string, number>>(
+    `/api/v1/events/counts?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`
+  );
 }
 
 /** 月份工具：'YYYY-MM' ↔ 该月首尾日期 */
@@ -132,7 +139,11 @@ export const SOURCE_META: Record<string, { label: string; dot: string; text: str
   huozhi: { label: '记账', dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
   mujian: { label: '演出', dot: 'bg-violet-500', text: 'text-violet-600 dark:text-violet-400' },
   diarum: { label: '日记', dot: 'bg-amber-500', text: 'text-amber-600 dark:text-amber-400' },
-  zhichang: { label: '健康', dot: 'bg-emerald-500', text: 'text-emerald-600 dark:text-emerald-400' },
+  zhichang: {
+    label: '健康',
+    dot: 'bg-emerald-500',
+    text: 'text-emerald-600 dark:text-emerald-400'
+  },
   dawarich: { label: '足迹', dot: 'bg-sky-500', text: 'text-sky-600 dark:text-sky-400' },
   immich: { label: '照片', dot: 'bg-fuchsia-500', text: 'text-fuchsia-600 dark:text-fuchsia-400' },
   'bili-history': { label: '观影', dot: 'bg-cyan-500', text: 'text-cyan-600 dark:text-cyan-400' },

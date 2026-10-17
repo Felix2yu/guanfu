@@ -1,7 +1,16 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import { fetchSources, AUTH_LABELS, type SourceState } from '#lib/api.ts';
-  import { initUI, disposeUI, setTheme, ui, effectiveDark, THEME_LABELS, type Theme } from '#lib/ui.svelte.ts';
+  import {
+    initUI,
+    disposeUI,
+    setTheme,
+    ui,
+    effectiveDark,
+    THEME_LABELS,
+    type Theme
+  } from '#lib/ui.svelte.ts';
 
   let sources = $state<SourceState[]>([]);
   let error = $state('');
@@ -16,7 +25,8 @@
     return disposeUI;
   });
 
-  const fmtInterval = (secs: number): string => (secs > 0 ? `${Math.round(secs / 60)} 分钟` : '默认');
+  const fmtInterval = (secs: number): string =>
+    secs > 0 ? `${Math.round(secs / 60)} 分钟` : '默认';
 
   const fmtTime = (unix: number): string =>
     unix ? new Date(unix * 1000).toLocaleString('zh-CN', { hour12: false }) : '从未';
@@ -35,12 +45,16 @@
 
 <div class="mx-auto max-w-3xl px-4 py-6">
   <header class="mb-5 flex items-center gap-3">
-    <a class="btn" href="/">←</a>
+    <a class="btn" href={resolve('/')}>←</a>
     <h1 class="text-lg font-semibold">设置</h1>
   </header>
 
   {#if error}
-    <div class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">{error}</div>
+    <div
+      class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+    >
+      {error}
+    </div>
   {/if}
 
   <section class="mb-8">
@@ -74,7 +88,9 @@
       <div class="py-8 text-center text-sm text-zinc-400">加载中…</div>
     {:else if sources.length === 0}
       <div class="py-8 text-center text-sm text-zinc-400">
-        还没有任何源。在环境变量里填 <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800">&lt;源名&gt;_BASE_URL</code> 后重启即可。
+        还没有任何源。在环境变量里填 <code class="rounded bg-zinc-100 px-1 dark:bg-zinc-800"
+          >&lt;源名&gt;_BASE_URL</code
+        > 后重启即可。
       </div>
     {:else}
       <div class="overflow-x-auto rounded-xl border border-zinc-200 dark:border-zinc-700">
@@ -98,11 +114,16 @@
                 <td class="px-3 py-2 {st.cls}" title={s.last_error || undefined}>
                   {st.label}{#if s.last_error}<span class="ml-1 text-zinc-400">· 见提示</span>{/if}
                 </td>
-                <td class="max-w-[220px] truncate px-3 py-2 tabular-nums text-zinc-500 dark:text-zinc-400" title={s.base_url || ''}>
+                <td
+                  class="max-w-[220px] truncate px-3 py-2 text-zinc-500 tabular-nums dark:text-zinc-400"
+                  title={s.base_url || ''}
+                >
                   {s.base_url || '—'}
                 </td>
-                <td class="px-3 py-2 text-zinc-500 dark:text-zinc-400">{AUTH_LABELS[s.auth ?? 'bearer']}</td>
-                <td class="px-3 py-2 tabular-nums text-zinc-500 dark:text-zinc-400">
+                <td class="px-3 py-2 text-zinc-500 dark:text-zinc-400"
+                  >{AUTH_LABELS[s.auth ?? 'bearer']}</td
+                >
+                <td class="px-3 py-2 text-zinc-500 tabular-nums dark:text-zinc-400">
                   {#if s.auth === 'none'}
                     不需要
                   {:else if s.credential_set}
@@ -113,9 +134,13 @@
                     <span class="ml-1 text-zinc-400">{s.credential_env}</span>
                   {/if}
                 </td>
-                <td class="px-3 py-2 text-right tabular-nums text-zinc-500 dark:text-zinc-400">{fmtInterval(s.interval_secs)}</td>
-                <td class="px-3 py-2 text-right tabular-nums text-zinc-500 dark:text-zinc-400">
-                  {fmtTime(s.last_sync_at)}{#if s.last_count}<span class="ml-1 text-zinc-400">+{s.last_count}</span>{/if}
+                <td class="px-3 py-2 text-right text-zinc-500 tabular-nums dark:text-zinc-400"
+                  >{fmtInterval(s.interval_secs)}</td
+                >
+                <td class="px-3 py-2 text-right text-zinc-500 tabular-nums dark:text-zinc-400">
+                  {fmtTime(s.last_sync_at)}{#if s.last_count}<span class="ml-1 text-zinc-400"
+                      >+{s.last_count}</span
+                    >{/if}
                 </td>
               </tr>
             {/each}
@@ -127,19 +152,28 @@
           <summary class="cursor-pointer select-none">展开各源的最新错误</summary>
           <ul class="mt-1 space-y-1 pl-4">
             {#each sources.filter((s) => s.last_error) as s (s.name)}
-              <li><span class="font-medium text-zinc-700 dark:text-zinc-300">{s.name}</span>：{s.last_error}</li>
+              <li>
+                <span class="font-medium text-zinc-700 dark:text-zinc-300">{s.name}</span
+                >：{s.last_error}
+              </li>
             {/each}
           </ul>
         </details>
       {/if}
     {/if}
 
-    <div class="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs leading-relaxed text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-400">
+    <div
+      class="mt-4 rounded-xl border border-zinc-200 bg-zinc-50 p-3 text-xs leading-relaxed text-zinc-600 dark:border-zinc-700 dark:bg-zinc-800/40 dark:text-zinc-400"
+    >
       <p class="mb-1 font-medium text-zinc-700 dark:text-zinc-300">端点与凭据在哪里改</p>
       <p>
-        这一页只读。凭据一律走环境变量（<code class="rounded bg-white px-1 dark:bg-zinc-900">&lt;源名&gt;_BASE_URL</code> /
-        <code class="rounded bg-white px-1 dark:bg-zinc-900">&lt;源名&gt;_API_KEY</code>），不写进数据库、不进镜像层——
-        库里存一份密钥等于把全家桶的钥匙和抄本放在同一个抽屉里。改完 <code class="rounded bg-white px-1 dark:bg-zinc-900">.env</code>
+        这一页只读。凭据一律走环境变量（<code class="rounded bg-white px-1 dark:bg-zinc-900"
+          >&lt;源名&gt;_BASE_URL</code
+        >
+        /
+        <code class="rounded bg-white px-1 dark:bg-zinc-900">&lt;源名&gt;_API_KEY</code
+        >），不写进数据库、不进镜像层—— 库里存一份密钥等于把全家桶的钥匙和抄本放在同一个抽屉里。改完
+        <code class="rounded bg-white px-1 dark:bg-zinc-900">.env</code>
         或 <code class="rounded bg-white px-1 dark:bg-zinc-900">docker run -e</code> 后重启容器生效。
       </p>
       <p class="mt-1">
