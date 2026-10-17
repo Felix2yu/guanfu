@@ -252,3 +252,7 @@ CI 走组织共享的可复用 workflow（`Felix2yu/.github`）：`test`（go ve
 上报 + 前端 check/build）、`image`（预编译二进制 → 装配镜像 → 双架构 manifest 推 GHCR）、
 `release`（发布 Release 时出 5 平台二进制）。版本号不在任何文件里，由 git tag 经
 `-ldflags -X main.version` 注入（本地构建为 `dev`，`guanfu -version` 可查）。
+
+## 许可证
+
+本项目以 [MIT](LICENSE) 发布，© 2026 Felix2yu。
