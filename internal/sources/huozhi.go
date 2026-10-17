@@ -96,10 +96,7 @@ func (h *HuozhiSource) Sync(ctx context.Context, cursor string, upsert func(*mod
 		return cursor, 0, nil // 游标已领先当天（时钟漂移），空转
 	}
 
-	var (
-		newCursor = cursor
-		total     int
-	)
+	var total int
 	const requestedPageSize = 100 // 上游上限 100
 	for page := 1; ; page++ {
 		bills, pageSize, pageTotal, err := h.fetchPage(ctx, start, end, page)
@@ -127,8 +124,7 @@ func (h *HuozhiSource) Sync(ctx context.Context, cursor string, upsert func(*mod
 			break
 		}
 	}
-	newCursor = end.Format("2006-01-02")
-	return newCursor, total, nil
+	return end.Format("2006-01-02"), total, nil
 }
 
 func (h *HuozhiSource) fetchPage(ctx context.Context, start, end time.Time, page int) (bills []huozhiBill, pageSize int, pageTotal int64, err error) {
