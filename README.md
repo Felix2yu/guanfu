@@ -8,7 +8,7 @@
 
 - **后端**：Go 1.27 单二进制，标准库 `net/http`，modernc.org/sqlite（纯 Go，无 CGO）
 - **前端**：SvelteKit 5 + Tailwind v4，SPA 模式（adapter-static），产物 `go:embed` 内嵌
-- **部署**：Docker 单容器，su-exec 按 `PUID/PGID` 降权，`/data` 卷持久化 SQLite
+- **部署**：Docker 单容器，公共基镜的降权入口按 `PUID/PGID` 降权（su-exec），`/data` 卷持久化 SQLite
 
 ## 快速开始
 
@@ -60,7 +60,7 @@ docker run -d --name guanfu \
 
 `/data` 是唯一持久化目录（SQLite，WAL 模式），已纳入既有备份体系（docker-db-auto-backup）。
 绑定挂载宿主目录（如 `-v ./data:/data`）时把 `PUID` / `PGID` 设成该目录属主 uid/gid，
-入口脚本会自动 `chown /data` 再降权运行；不设置时默认 `1000:1000`。
+公共基镜的降权入口会自动 `chown /data` 再降权运行；不设置时默认 `1000:1000`。
 
 ### 前端单独开发（热更新）
 
