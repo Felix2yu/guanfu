@@ -62,6 +62,16 @@ docker run -d --name guanfu \
 绑定挂载宿主目录（如 `-v ./data:/data`）时把 `PUID` / `PGID` 设成该目录属主 uid/gid，
 公共基镜的降权入口会自动 `chown /data` 再降权运行；不设置时默认 `1000:1000`。
 
+导出由应用自身完成：`guanfu backup` 子命令用 `VACUUM INTO` 生成事务级一致快照
+（含 WAL 中已提交的数据），只写 stdout、不跑迁移，备份工具经 `docker exec` 直接采集。
+手工备份同一条命令：
+
+```bash
+docker exec guanfu guanfu backup > guanfu-$(date +%F).db
+```
+
+恢复即把文件放回 `/data` 卷（修好属主）重启容器。
+
 ### 前端单独开发（热更新）
 
 ```bash

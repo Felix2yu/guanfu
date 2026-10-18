@@ -40,6 +40,10 @@ services:
       # PGID: ${PGID:-1000}
       # 同步引擎总开关（0 = 只提供已有数据的查询）
       GUANFU_SYNC_ENABLED: ${GUANFU_SYNC_ENABLED:-1}
+      # 外部备份工具（docker-db-auto-backup）经 docker exec 触发的自导出命令：
+      # `guanfu backup` 把 VACUUM INTO 的 SQLite 一致性快照写到 stdout。
+      # 导出身份自动沿用基镜烘入的 PUID/PGID（与数据属主一致），无需 BACKUP_SQLITE_USER。
+      BACKUP_SQLITE_CMD: "guanfu backup"
 
     volumes:
       - guanfu-data:/data

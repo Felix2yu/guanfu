@@ -7,6 +7,7 @@
 //
 //	guanfu            # HTTP 服务（时间轴 + API + /mcp）
 //	guanfu mcp        # 只读 MCP server，stdio 传输（供本地 AI 客户端直连）
+//	guanfu backup     # 向 stdout 导出 SQLite 一致性快照（供外部备份工具 docker exec 调用）
 //	guanfu -version   # 打印版本
 package main
 
@@ -15,6 +16,7 @@ import (
 	"errors"
 	"flag"
 	"fmt"
+	"io"
 	"log"
 	"net/http"
 	"os"
@@ -37,6 +39,17 @@ import (
 const MCPPath = "/mcp"
 
 func main() {
+	// 外部备份工具（docker-db-auto-backup）经 docker exec 调用 `guanfu backup`，
+	// 把一致性快照写到 stdout。必须拦在最前面——早于 flag.Parse、存储初始化、
+	// 迁移、同步引擎与 HTTP：导出进程只做导出这一件事。
+	// stdout 只承载快照字节，日志一律留在 stderr（Go log 默认即 stderr）。
+	if len(os.Args) > 1 && os.Args[1] == "backup" {
+		if err := runBackup(config.Load().DBPath, os.Stdout); err != nil {
+			log.Fatalf("备份导出失败: %v", err)
+		}
+		return
+	}
+
 	showVersion := flag.Bool("version", false, "打印版本并退出")
 	flag.Parse()
 	if *showVersion {
@@ -167,4 +180,16 @@ func main() {
 		log.Printf("HTTP 停机超时: %v", err)
 	}
 	log.Printf("已退出")
+}
+
+// runBackup 实现 `guanfu backup`：以不迁移、不建档的方式打开数据库，
+// 把 VACUUM INTO 的事务级一致快照写到 w（由调用方给 os.Stdout）。
+// 库路径复用 config 的解析（GUANFU_DB），备份工具无需额外配置。
+func runBackup(dbPath string, w io.Writer) error {
+	st, err := store.OpenForExport(dbPath)
+	if err != nil {
+		return err
+	}
+	defer st.Close()
+	return st.WriteSQLiteSnapshot(w)
 }
