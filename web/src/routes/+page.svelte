@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { resolve } from '$app/paths';
   import { onMount } from 'svelte';
   import EventCard from '#lib/components/EventCard.svelte';
   import Heatmap from '#lib/components/Heatmap.svelte';
@@ -128,7 +129,9 @@
   // 全天事件置顶展示（日记/健康汇总等无具体时刻），其余按时刻排列。
   const sorted = $derived([
     ...events.filter((e) => e.time_precision === 'day'),
-    ...events.filter((e) => e.time_precision !== 'day').sort((a, b) => a.occurred_at - b.occurred_at)
+    ...events
+      .filter((e) => e.time_precision !== 'day')
+      .sort((a, b) => a.occurred_at - b.occurred_at)
   ]);
   const incomeTotal = $derived(sumBy(events, 'income'));
   const expenseTotal = $derived(sumBy(events, 'expense'));
@@ -136,7 +139,11 @@
 
   function sumBy(list: Event[], kind: 'income' | 'expense'): number {
     return list
-      .filter((e) => e.event_type === 'transaction' && (kind === 'income' ? e.detail?.type === 'income' : e.detail?.type !== 'income'))
+      .filter(
+        (e) =>
+          e.event_type === 'transaction' &&
+          (kind === 'income' ? e.detail?.type === 'income' : e.detail?.type !== 'income')
+      )
       .reduce((acc, e) => acc + (e.amount_cents ?? 0), 0);
   }
 
@@ -183,8 +190,12 @@
     {/if}
 
     <div class="ml-auto flex items-center gap-3 text-sm tabular-nums">
-      {#if incomeTotal > 0}<span class="text-emerald-600 dark:text-emerald-400">+¥{(incomeTotal / 100).toFixed(2)}</span>{/if}
-      {#if expenseTotal > 0}<span class="text-rose-600 dark:text-rose-400">−¥{(expenseTotal / 100).toFixed(2)}</span>{/if}
+      {#if incomeTotal > 0}<span class="text-emerald-600 dark:text-emerald-400"
+          >+¥{(incomeTotal / 100).toFixed(2)}</span
+        >{/if}
+      {#if expenseTotal > 0}<span class="text-rose-600 dark:text-rose-400"
+          >−¥{(expenseTotal / 100).toFixed(2)}</span
+        >{/if}
       <span class="text-zinc-400">{events.length} 条</span>
     </div>
   </header>
@@ -212,25 +223,32 @@
     -->
     <div class="mb-4 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
       <div
-        class="flex min-w-0 flex-1 items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [scrollbar-width:none] [&::-webkit-scrollbar]:hidden"
+        class="flex min-w-0 flex-1 [scrollbar-width:none] items-center gap-2 overflow-x-auto [-ms-overflow-style:none] [&::-webkit-scrollbar]:hidden"
       >
         {#each enabledSources as s (s.name)}
           <button
             class="flex shrink-0 items-center gap-1 rounded-full border border-zinc-200 px-2 py-0.5 transition-colors hover:border-zinc-400 dark:border-zinc-700"
             onclick={() => sync(s.name)}
             disabled={syncing === s.name}
-            title={s.last_error || `游标 ${s.cursor || '—'} · 上次同步 ${s.last_sync_at ? new Date(s.last_sync_at * 1000).toLocaleString() : '从未'}`}
+            title={s.last_error ||
+              `游标 ${s.cursor || '—'} · 上次同步 ${s.last_sync_at ? new Date(s.last_sync_at * 1000).toLocaleString() : '从未'}`}
           >
-            <span class="h-1.5 w-1.5 rounded-full {s.last_error ? 'bg-rose-500' : 'bg-emerald-500'}"></span>
+            <span class="h-1.5 w-1.5 rounded-full {s.last_error ? 'bg-rose-500' : 'bg-emerald-500'}"
+            ></span>
             {s.name}{syncing === s.name ? ' …' : ''}
           </button>
         {/each}
       </div>
-      <button class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" onclick={() => sync('all')}>
+      <button
+        class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700"
+        onclick={() => sync('all')}
+      >
         同步全部
       </button>
       {#if range.min}
         <!-- 一键导出：库里有数据才出现（空库导出是个只会骗人下载的空文件）。 -->
+        <!-- 下载链接指向 Go 后端的 /api 接口，不是 Kit 路由，resolve() 在这里没有意义 -->
+        <!-- eslint-disable svelte/no-navigation-without-resolve -->
         <a
           class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700"
           href="/api/v1/export?from={range.min}&to={range.max}"
@@ -239,13 +257,19 @@
         >
           导出
         </a>
+        <!-- eslint-enable svelte/no-navigation-without-resolve -->
       {/if}
-      <a class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700" href="/settings">设置</a>
+      <a
+        class="shrink-0 rounded-full border border-zinc-200 px-2 py-0.5 hover:border-zinc-400 dark:border-zinc-700"
+        href={resolve('/settings')}>设置</a
+      >
     </div>
   {/if}
 
   {#if error}
-    <div class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300">
+    <div
+      class="mb-4 rounded-lg bg-rose-50 px-3 py-2 text-sm text-rose-700 dark:bg-rose-950/40 dark:text-rose-300"
+    >
       {error}
     </div>
   {/if}
@@ -253,7 +277,11 @@
   {#if ui.view === 'calendar'}
     <!-- 日历视图：整月热力图，点格子进当日 -->
     <div class="mb-4 flex items-start gap-2">
-      <button class="btn mt-3" onclick={() => (heatMonth = shiftMonth(heatMonth, -1))} aria-label="上个月">←</button>
+      <button
+        class="btn mt-3"
+        onclick={() => (heatMonth = shiftMonth(heatMonth, -1))}
+        aria-label="上个月">←</button
+      >
       <div class="flex-1">
         <Heatmap
           month={heatMonth}
@@ -264,9 +292,15 @@
           onpick={(d: string) => goto(d)}
         />
       </div>
-      <button class="btn mt-3" onclick={() => (heatMonth = shiftMonth(heatMonth, 1))} aria-label="下个月">→</button>
+      <button
+        class="btn mt-3"
+        onclick={() => (heatMonth = shiftMonth(heatMonth, 1))}
+        aria-label="下个月">→</button
+      >
     </div>
-    <p class="text-xs text-zinc-400 dark:text-zinc-500">点任意一天进入当日视图；颜色深浅按当天事件条数。</p>
+    <p class="text-xs text-zinc-400 dark:text-zinc-500">
+      点任意一天进入当日视图；颜色深浅按当天事件条数。
+    </p>
   {:else if ui.view === 'timeline'}
     <!-- 时间线视图：跨日连续流，日子倒序、日内时刻正序 -->
     <div class="mb-3 flex items-center gap-2 text-xs text-zinc-500 dark:text-zinc-400">
@@ -281,24 +315,34 @@
       </button>
     </div>
     {#if tlTruncated}
-      <div class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300">
+      <div
+        class="mb-3 rounded-lg bg-amber-50 px-3 py-2 text-xs text-amber-800 dark:bg-amber-950/40 dark:text-amber-300"
+      >
         这个窗口内的事件超过 1000 条上限，列表可能不完整——请改用日历逐日查看。
       </div>
     {/if}
     {#if !tlLoading && tlGroups.length === 0}
       <div class="py-16 text-center text-sm text-zinc-400">
-        这段时间没有数据。{#if range.min}<span class="block mt-1">数据范围 {range.min} ~ {range.max}</span>{/if}
+        这段时间没有数据。{#if range.min}<span class="mt-1 block"
+            >数据范围 {range.min} ~ {range.max}</span
+          >{/if}
       </div>
     {:else}
       <div class="space-y-6">
         {#each tlGroups as g (g.day)}
           <section>
-            <div class="mb-1 flex items-baseline gap-2 border-b border-zinc-200 pb-1 dark:border-zinc-800">
+            <div
+              class="mb-1 flex items-baseline gap-2 border-b border-zinc-200 pb-1 dark:border-zinc-800"
+            >
               <h2 class="text-sm font-medium tabular-nums">{g.day} 周{fmtWeekday(g.day)}</h2>
-              <span class="text-xs tabular-nums text-zinc-400">{g.list.length} 条</span>
+              <span class="text-xs text-zinc-400 tabular-nums">{g.list.length} 条</span>
               <span class="ml-auto flex gap-2 text-xs tabular-nums">
-                {#if g.income > 0}<span class="text-emerald-600 dark:text-emerald-400">+¥{(g.income / 100).toFixed(2)}</span>{/if}
-                {#if g.expense > 0}<span class="text-rose-600 dark:text-rose-400">−¥{(g.expense / 100).toFixed(2)}</span>{/if}
+                {#if g.income > 0}<span class="text-emerald-600 dark:text-emerald-400"
+                    >+¥{(g.income / 100).toFixed(2)}</span
+                  >{/if}
+                {#if g.expense > 0}<span class="text-rose-600 dark:text-rose-400"
+                    >−¥{(g.expense / 100).toFixed(2)}</span
+                  >{/if}
               </span>
             </div>
             <div class="relative pl-1">
@@ -318,7 +362,7 @@
     {:else if sorted.length === 0}
       <div class="py-16 text-center text-sm text-zinc-400">
         这一天还没有数据。
-        {#if range.min}<span class="block mt-1">数据范围 {range.min} ~ {range.max}</span>{/if}
+        {#if range.min}<span class="mt-1 block">数据范围 {range.min} ~ {range.max}</span>{/if}
       </div>
     {:else}
       <div class="relative pl-1">

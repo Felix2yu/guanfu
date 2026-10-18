@@ -74,7 +74,9 @@ export function setTheme(t: Theme): void {
   ui.theme = t;
   try {
     localStorage.setItem(THEME_KEY, t);
-  } catch {}
+  } catch {
+    // 隐私模式下 localStorage 会抛，主题已在内存里生效，忽略
+  }
   applyTheme();
 }
 
@@ -82,7 +84,9 @@ export function setView(v: ViewMode): void {
   ui.view = v;
   try {
     localStorage.setItem(VIEW_KEY, v);
-  } catch {}
+  } catch {
+    // 同上：存不下去只是刷新后回到默认视图
+  }
 }
 
 /** 当前实际生效的深浅色（跟随系统时给出系统值）。

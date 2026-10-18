@@ -3,13 +3,17 @@
 
   let { event }: { event: Event } = $props();
 
-  const meta = $derived(SOURCE_META[event.source] ?? { label: event.source, dot: 'bg-zinc-400', text: 'text-zinc-500' });
+  const meta = $derived(
+    SOURCE_META[event.source] ?? { label: event.source, dot: 'bg-zinc-400', text: 'text-zinc-500' }
+  );
   const typeLabel = $derived(TYPE_LABEL[event.event_type] ?? event.event_type);
   const isDay = $derived(event.time_precision === 'day');
   // 优先服务端下发的本地时刻（GUANFU_TZ），仅在缺失时回退浏览器时区。
   const timeText = $derived(event.local_time ?? fmtTime(event.occurred_at));
   const amountText = $derived(
-    event.amount_cents ? `${event.detail?.type === 'income' ? '+' : '−'}¥${fmtAmount(event.amount_cents)}` : ''
+    event.amount_cents
+      ? `${event.detail?.type === 'income' ? '+' : '−'}¥${fmtAmount(event.amount_cents)}`
+      : ''
   );
 
   // 封面（video_watch）：取第一张带代理路径的媒体；加载失败则隐藏。
@@ -21,7 +25,9 @@
   let coverFailed = $state(false);
 
   // 演出评分（performance）：整星展示。
-  const rating = $derived(event.event_type === 'performance' ? Number(event.detail?.rating ?? 0) : 0);
+  const rating = $derived(
+    event.event_type === 'performance' ? Number(event.detail?.rating ?? 0) : 0
+  );
 
   // 健康日报（health_day）：指标 chips，最多 4 个（与服务端摘要一致）。
   const healthChips = $derived.by(() => {
@@ -48,7 +54,9 @@
 
   // 到访（location_visit）：无地名时展示坐标兜底。
   const coordText = $derived(
-    event.event_type === 'location_visit' && !event.location_name && (event.latitude || event.longitude)
+    event.event_type === 'location_visit' &&
+      !event.location_name &&
+      (event.latitude || event.longitude)
       ? `${event.latitude?.toFixed(4)}, ${event.longitude?.toFixed(4)}`
       : ''
   );
@@ -121,7 +129,7 @@
 >
   <span class="mt-[7px] h-2 w-2 shrink-0 rounded-full {meta.dot}"></span>
 
-  <span class="w-11 shrink-0 text-xs tabular-nums text-zinc-500 dark:text-zinc-400">
+  <span class="w-11 shrink-0 text-xs text-zinc-500 tabular-nums dark:text-zinc-400">
     {#if isDay}
       <span
         class="rounded bg-zinc-200/70 px-1.5 py-0.5 text-[11px] font-medium text-zinc-600 dark:bg-zinc-700/70 dark:text-zinc-300"
@@ -149,34 +157,49 @@
       {/if}
       <span class="truncate font-medium text-zinc-900 dark:text-zinc-100">{event.title}</span>
       {#if amountText}
-        <span class="shrink-0 text-sm font-semibold tabular-nums {event.detail?.type === 'income' ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}">
+        <span
+          class="shrink-0 text-sm font-semibold tabular-nums {event.detail?.type === 'income'
+            ? 'text-emerald-600 dark:text-emerald-400'
+            : 'text-rose-600 dark:text-rose-400'}"
+        >
           {amountText}
         </span>
       {/if}
       {#if rating > 0}
         <span class="shrink-0 text-xs tracking-tight text-amber-500" aria-label="评分 {rating} 星">
-          {'★'.repeat(Math.min(rating, 5))}{#if rating < 5}<span class="text-zinc-300 dark:text-zinc-600">{'★'.repeat(5 - rating)}</span>{/if}
+          {'★'.repeat(Math.min(rating, 5))}{#if rating < 5}<span
+              class="text-zinc-300 dark:text-zinc-600">{'★'.repeat(5 - rating)}</span
+            >{/if}
         </span>
       {/if}
       {#if event.location_name}
-        <span class="shrink-0 truncate text-xs text-zinc-500 dark:text-zinc-400">📍 {event.location_name}</span>
+        <span class="shrink-0 truncate text-xs text-zinc-500 dark:text-zinc-400"
+          >📍 {event.location_name}</span
+        >
       {:else if coordText}
-        <span class="shrink-0 truncate text-xs tabular-nums text-zinc-400 dark:text-zinc-500">📍 {coordText}</span>
+        <span class="shrink-0 truncate text-xs text-zinc-400 tabular-nums dark:text-zinc-500"
+          >📍 {coordText}</span
+        >
       {/if}
     </div>
     {#if event.summary && event.summary !== event.title}
       <div class="truncate text-xs text-zinc-500 dark:text-zinc-400">{event.summary}</div>
     {/if}
     {#if diary?.lines}
-      <div class="mt-1 whitespace-pre-line line-clamp-3 text-xs leading-relaxed text-zinc-600 dark:text-zinc-300">
+      <div
+        class="mt-1 line-clamp-3 text-xs leading-relaxed whitespace-pre-line text-zinc-600 dark:text-zinc-300"
+      >
         {diary.lines}
       </div>
     {/if}
     {#if healthChips.length > 0}
       <div class="mt-1 flex flex-wrap gap-1">
         {#each healthChips as chip (chip.key)}
-          <span class="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] tabular-nums text-zinc-600 dark:bg-zinc-800 dark:text-zinc-300">
-            {chip.label} {chip.display}
+          <span
+            class="rounded bg-zinc-100 px-1.5 py-0.5 text-[11px] text-zinc-600 tabular-nums dark:bg-zinc-800 dark:text-zinc-300"
+          >
+            {chip.label}
+            {chip.display}
           </span>
         {/each}
       </div>
@@ -184,8 +207,13 @@
     {#if habitChips.length > 0}
       <div class="mt-1 flex flex-wrap gap-1">
         {#each habitChips as chip (chip.name)}
-          <span class="rounded bg-lime-50 px-1.5 py-0.5 text-[11px] text-lime-700 dark:bg-lime-950/50 dark:text-lime-300">
-            {chip.name}{#if chip.count > 1}<span class="ml-0.5 tabular-nums text-lime-600/80 dark:text-lime-400/80">×{chip.count}</span>{/if}
+          <span
+            class="rounded bg-lime-50 px-1.5 py-0.5 text-[11px] text-lime-700 dark:bg-lime-950/50 dark:text-lime-300"
+          >
+            {chip.name}{#if chip.count > 1}<span
+                class="ml-0.5 text-lime-600/80 tabular-nums dark:text-lime-400/80"
+                >×{chip.count}</span
+              >{/if}
           </span>
         {/each}
       </div>
@@ -208,7 +236,10 @@
               onerror={() => (failed[t.i] = true)}
             />
             {#if t.m.kind === 'video'}
-              <span class="absolute bottom-0.5 right-0.5 text-[9px] leading-none text-white drop-shadow">▶</span>
+              <span
+                class="absolute right-0.5 bottom-0.5 text-[9px] leading-none text-white drop-shadow"
+                >▶</span
+              >
             {/if}
           </button>
         {/each}
@@ -244,7 +275,9 @@
   >
     {#if failed[lightbox]}
       <!-- 灯箱里这张也取不到：给一句人话，不摆破图图标。 -->
-      <div class="flex max-h-[80vh] items-center rounded bg-zinc-800/70 px-8 py-16 text-sm text-zinc-300">
+      <div
+        class="flex max-h-[80vh] items-center rounded bg-zinc-800/70 px-8 py-16 text-sm text-zinc-300"
+      >
         这张图没取到，源站返回了错误
       </div>
     {:else}
@@ -256,10 +289,19 @@
       />
     {/if}
     <div class="mt-3 flex items-center gap-4 text-sm text-white">
-      <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={() => stepLightbox(-1)}>←</button>
+      <button
+        class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10"
+        onclick={() => stepLightbox(-1)}>←</button
+      >
       <span class="tabular-nums">{lightbox + 1} / {photos.length}</span>
-      <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={() => stepLightbox(1)}>→</button>
-      <button class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10" onclick={closeLightbox}>关闭</button>
+      <button
+        class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10"
+        onclick={() => stepLightbox(1)}>→</button
+      >
+      <button
+        class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10"
+        onclick={closeLightbox}>关闭</button
+      >
     </div>
   </div>
 {/if}
