@@ -10,7 +10,7 @@
 #
 # 数据放在具名卷里而不是绑定挂载：具名卷由 Docker 按容器内用户归属初始化，天然无权限问题。
 # 若确实想绑定挂载到宿主目录（如 ./data:/data），无需手动 chown —— 把下方 environment
-# 里的 PUID / PGID 设成宿主目录的属主 uid/gid，入口脚本会自动 chown /data 并以该身份
+# 里的 PUID / PGID 设成宿主目录的属主 uid/gid，基镜的降权入口会自动 chown /data 并以该身份
 # 运行，从而让 SQLite（WAL 模式，需对 /data 可写）正常写入。不设置时默认 1000:1000。
 
 services:
