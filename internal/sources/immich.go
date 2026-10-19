@@ -59,6 +59,11 @@ type ImmichSource struct {
 }
 
 func NewImmichSource(cfg config.SourceConfig) *ImmichSource {
+	// 适配器自报家门：认证方式与 Key 请求头都靠它解析，
+	// 不依赖调用方记得填 Name（测试与页面配置两条路径都会经过这里）。
+	if cfg.Name == "" {
+		cfg.Name = "immich"
+	}
 	return &ImmichSource{cfg: cfg, loc: model.LocalLocation()}
 }
 
@@ -215,7 +220,9 @@ func (s *ImmichSource) searchPage(ctx context.Context, dayStart, dayEnd time.Tim
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("x-api-key", s.cfg.APIKey)
+	if err := s.cfg.ApplyAuth(req); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Accept", "application/json")
 

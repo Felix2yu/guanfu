@@ -51,6 +51,11 @@ type zhichangMeta struct {
 }
 
 func NewZhichangSource(cfg config.SourceConfig) *ZhichangSource {
+	// 适配器自报家门：认证方式与 Key 请求头都靠它解析，
+	// 不依赖调用方记得填 Name（测试与页面配置两条路径都会经过这里）。
+	if cfg.Name == "" {
+		cfg.Name = "zhichang"
+	}
 	return &ZhichangSource{cfg: cfg, loc: model.LocalLocation()}
 }
 

@@ -174,3 +174,57 @@ func extIDs(list []*model.Event) string {
 	}
 	return out
 }
+
+func TestOverviewDaysAndSources(t *testing.T) {
+	st := openTemp(t)
+	seedStat(t, st, "h1", "huozhi", "transaction", "2026-10-05", 1200, "expense")
+	seedStat(t, st, "h2", "huozhi", "transaction", "2026-10-05", 500000, "income")
+	seedStat(t, st, "q1", "qiansi", "gift_money", "2026-10-07", 20000, "income")
+	seedStat(t, st, "d1", "diarum", "diary", "2026-11-01", 0, "") // 区间外
+
+	ov, err := st.Overview("2026-10-01", "2026-10-31")
+	if err != nil {
+		t.Fatalf("Overview 失败: %v", err)
+	}
+	if ov.TotalCount != 3 {
+		t.Fatalf("total_count 期望 3，实际 %d", ov.TotalCount)
+	}
+	cny := ov.Totals["CNY"]
+	if cny.IncomeCents != 520000 || cny.ExpenseCents != 1200 {
+		t.Fatalf("区间合计有误: %+v（期望 收 520000 / 支 1200）", cny)
+	}
+
+	// 逐日序列按日期升序，且只含有数据的两天。
+	if len(ov.Days) != 2 {
+		t.Fatalf("days 期望 2 天，实际 %d: %+v", len(ov.Days), ov.Days)
+	}
+	if ov.Days[0].Key != "2026-10-05" || ov.Days[1].Key != "2026-10-07" {
+		t.Fatalf("days 排序/内容有误: %+v", ov.Days)
+	}
+	if d := ov.Days[0].Totals["CNY"]; d.IncomeCents != 500000 || d.ExpenseCents != 1200 {
+		t.Fatalf("10-05 收支持有误: %+v", d)
+	}
+
+	// 来源分布按条数倒序。
+	if len(ov.Sources) != 2 || ov.Sources[0].Key != "huozhi" {
+		t.Fatalf("sources 期望 huozhi 居首: %+v", ov.Sources)
+	}
+	if ov.Sources[0].Count != 2 || ov.Sources[1].Key != "qiansi" {
+		t.Fatalf("sources 内容有误: %+v", ov.Sources)
+	}
+}
+
+func TestOverviewEmptyRange(t *testing.T) {
+	st := openTemp(t)
+	ov, err := st.Overview("2026-01-01", "2026-01-31")
+	if err != nil {
+		t.Fatalf("空区间不该报错: %v", err)
+	}
+	if ov.TotalCount != 0 || len(ov.Days) != 0 || len(ov.Sources) != 0 {
+		t.Fatalf("空区间应全为空: %+v", ov)
+	}
+	// 空区间也要能安全序列化成 {"totals":{}} 而不是 null，前端直接取 [] 即可。
+	if ov.Totals == nil {
+		t.Fatal("Totals 不应为 nil")
+	}
+}

@@ -81,6 +81,27 @@ func (s *Store) migrate() error {
 			last_count     INTEGER NOT NULL DEFAULT 0,
 			updated_at     INTEGER NOT NULL DEFAULT 0
 		)`,
+		// 页面配置。行的存在与否本身就是语义：有行 = 该端点由页面接管
+		// （整块覆盖环境变量，空值就是真的清空，不回退）；无行 = 完全读 env。
+		// secret 存的是 secret.Box 密封后的密文，不是明文。
+		`CREATE TABLE IF NOT EXISTS endpoint_config (
+			name          TEXT PRIMARY KEY,
+			kind          TEXT    NOT NULL DEFAULT 'source',
+			base_url      TEXT    NOT NULL DEFAULT '',
+			auth          TEXT    NOT NULL DEFAULT '',
+			secret        TEXT    NOT NULL DEFAULT '',
+			extras_json   TEXT    NOT NULL DEFAULT '',
+			enabled       INTEGER NOT NULL DEFAULT 1,
+			interval_secs INTEGER NOT NULL DEFAULT 0,
+			updated_at    INTEGER NOT NULL DEFAULT 0
+		)`,
+		// 应用级开关（如「同步失败时推送」）。与端点配置分开：
+		// 它不属于任何一个端点，混进 endpoint_config 会让"行=接管"的语义失真。
+		`CREATE TABLE IF NOT EXISTS app_setting (
+			key        TEXT PRIMARY KEY,
+			value      TEXT NOT NULL DEFAULT '',
+			updated_at INTEGER NOT NULL DEFAULT 0
+		)`,
 	}
 	for _, stmt := range stmts {
 		if _, err := s.DB.Exec(stmt); err != nil {

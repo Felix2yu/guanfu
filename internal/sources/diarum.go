@@ -57,6 +57,11 @@ type DiarumSource struct {
 }
 
 func NewDiarumSource(cfg config.SourceConfig) *DiarumSource {
+	// 适配器自报家门：认证方式与 Key 请求头都靠它解析，
+	// 不依赖调用方记得填 Name（测试与页面配置两条路径都会经过这里）。
+	if cfg.Name == "" {
+		cfg.Name = "diarum"
+	}
 	return &DiarumSource{cfg: cfg, loc: model.LocalLocation()}
 }
 
@@ -243,15 +248,31 @@ func (d *DiarumSource) getJSON(ctx context.Context, reqURL string) ([]byte, erro
 }
 
 func (d *DiarumSource) doGet(ctx context.Context, reqURL string) ([]byte, int, error) {
-	token, err := d.token(ctx)
-	if err != nil {
-		return nil, 0, err
-	}
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, 0, err
 	}
-	req.Header.Set("Authorization", "Bearer "+token)
+	// 认证方式可被页面覆盖：
+	//   jwt（默认）   —— 直传 JWT 或「用户名:密码」由 token() 换票；
+	//   bearer        —— 原样当 Bearer 发（适合上游改成了长期 token 的场景）；
+	//   none/api_key/basic —— 交给 ApplyAuth 按对应方式发。
+	cfg := d.cfg
+	cfg.Auth = d.cfg.AuthMode()
+	switch cfg.Auth {
+	case config.AuthJWT:
+		token, err := d.token(ctx)
+		if err != nil {
+			return nil, 0, err
+		}
+		cfg.APIKey, cfg.Auth = token, config.AuthBearer
+	case config.AuthBearer:
+		if cfg.APIKey == "" {
+			return nil, 0, fmt.Errorf("DIARUM_API_KEY 未配置（Bearer 方式需要一个 token）")
+		}
+	}
+	if err := cfg.ApplyAuth(req); err != nil {
+		return nil, 0, err
+	}
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}

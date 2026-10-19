@@ -9,6 +9,7 @@ package sync
 
 import (
 	"context"
+	"sync"
 	"time"
 
 	"github.com/Felix2yu/guanfu/internal/model"
@@ -64,12 +65,22 @@ func (r *Registry) All() []Adapter {
 type EnabledFunc func(name string) bool
 
 // Engine 同步调度引擎。
+//
+// 适配器是「配置快照」构造出来的（各源把 BaseURL/Key 拿在手里），
+// 所以页面改完配置后必须换一批适配器——Reconfigure 就是干这个的：
+// 取消旧的一轮调度 goroutine，用新注册表重启，进程不重启。
 type Engine struct {
-	store    *store.Store
-	registry *Registry
-	enabled  EnabledFunc
-	trigger  chan string // 手动触发（源名或 "*" 表示全部）
-	done     chan struct{}
+	store   *store.Store
+	trigger chan string // 手动触发（源名或 "*" 表示全部）
+	done    chan struct{}
+
+	mu        sync.RWMutex
+	registry  *Registry
+	enabled   EnabledFunc
+	onFailure func(name string, err error)
+	// parent 是 Start 收到的根 ctx；cancel 是当前这批调度 goroutine 的子 ctx。
+	parent context.Context
+	cancel context.CancelFunc
 }
 
 // NewEngine 创建引擎。enabled 决定哪些源参与调度（由 config 提供）。
@@ -83,12 +94,54 @@ func NewEngine(st *store.Store, reg *Registry, enabled EnabledFunc) *Engine {
 	}
 }
 
+// SetOnFailure 注册「某源由正常转为失败」的回调（通知渠道挂在上面）。
+// 回调在独立 goroutine 里跑，不阻塞同步循环。
+func (e *Engine) SetOnFailure(fn func(name string, err error)) {
+	e.mu.Lock()
+	e.onFailure = fn
+	e.mu.Unlock()
+}
+
 // Start 启动引擎：立即同步一轮，随后按各源 Interval 定时同步。
 // 启动时会为每个启用的源写入初始状态行（last_sync_at=0），
 // 让前端源状态区在首次同步完成前即可见。
 func (e *Engine) Start(ctx context.Context) {
-	for _, a := range e.registry.All() {
-		if !e.enabled(a.Name()) {
+	e.mu.Lock()
+	e.parent = ctx
+	e.mu.Unlock()
+	go e.runManual(ctx)
+	e.respawn()
+}
+
+// Reconfigure 用新的适配器注册表替换当前调度（配置改完后调用）。
+// 未 Start 过时只记下新注册表，等 Start 时生效。
+func (e *Engine) Reconfigure(reg *Registry) {
+	e.mu.Lock()
+	e.registry = reg
+	started := e.parent != nil
+	e.mu.Unlock()
+	if started {
+		e.respawn()
+	}
+}
+
+// respawn 取消上一批调度 goroutine 并按当前注册表重开。
+func (e *Engine) respawn() {
+	e.mu.Lock()
+	if e.parent == nil {
+		e.mu.Unlock()
+		return
+	}
+	if e.cancel != nil {
+		e.cancel()
+	}
+	runCtx, cancel := context.WithCancel(e.parent)
+	e.cancel = cancel
+	reg := e.registry
+	e.mu.Unlock()
+
+	for _, a := range reg.All() {
+		if !e.isEnabled(a.Name()) {
 			continue
 		}
 		if cur, err := e.store.GetSourceCursor(a.Name()); err == nil && cur == "" {
@@ -96,9 +149,26 @@ func (e *Engine) Start(ctx context.Context) {
 				_ = e.store.SaveSourceState(a.Name(), true, int(a.Interval().Seconds()), "", 0, "", 0)
 			}
 		}
-		go e.runSource(ctx, a)
+		go e.runSource(runCtx, a)
 	}
-	go e.runManual(ctx)
+}
+
+// currentRegistry 取当前注册表快照（手动触发用它，避免读到半新半旧的集合）。
+func (e *Engine) currentRegistry() *Registry {
+	e.mu.RLock()
+	defer e.mu.RUnlock()
+	return e.registry
+}
+
+// isEnabled 判断某源当前是否参与调度。
+func (e *Engine) isEnabled(name string) bool {
+	e.mu.RLock()
+	fn := e.enabled
+	e.mu.RUnlock()
+	if fn == nil {
+		return false
+	}
+	return fn(name)
 }
 
 // Trigger 请求手动同步某源（name="*" 表示全部启用源）。非阻塞。
@@ -109,8 +179,16 @@ func (e *Engine) Trigger(name string) {
 	}
 }
 
-// Stop 等待所有 goroutine 退出（ctx 取消后由调用方控制）。
-func (e *Engine) Stop() { close(e.done) }
+// Stop 取消调度并等待 goroutine 退出（ctx 取消后由调用方控制）。
+func (e *Engine) Stop() {
+	e.mu.Lock()
+	if e.cancel != nil {
+		e.cancel()
+		e.cancel = nil
+	}
+	e.mu.Unlock()
+	close(e.done)
+}
 
 func (e *Engine) runManual(ctx context.Context) {
 	for {
@@ -118,15 +196,16 @@ func (e *Engine) runManual(ctx context.Context) {
 		case <-ctx.Done():
 			return
 		case name := <-e.trigger:
-			adapters := e.registry.All()
+			reg := e.currentRegistry()
+			adapters := reg.All()
 			if name != "*" {
 				adapters = nil
-				if a, ok := e.registry.Get(name); ok {
+				if a, ok := reg.Get(name); ok {
 					adapters = []Adapter{a}
 				}
 			}
 			for _, a := range adapters {
-				if !e.enabled(a.Name()) {
+				if !e.isEnabled(a.Name()) {
 					continue
 				}
 				e.syncOnce(ctx, a)
@@ -184,11 +263,25 @@ func (e *Engine) syncOnce(ctx context.Context, a Adapter) {
 		newCursor = cursor
 	}
 	intervalSecs := int(a.Interval().Seconds())
-	_ = e.store.SaveSourceState(a.Name(), e.enabled(a.Name()), intervalSecs, newCursor, time.Now().Unix(), "", n)
+	_ = e.store.SaveSourceState(a.Name(), e.isEnabled(a.Name()), intervalSecs, newCursor, time.Now().Unix(), "", n)
 }
 
 func (e *Engine) recordError(name string, err error) {
 	// 先读后写，保留原 cursor，避免失败一次就触发全量回溯。
 	cur, _ := e.store.GetSourceCursor(name)
-	_ = e.store.SaveSourceState(name, e.enabled(name), 0, cur, 0, err.Error(), 0)
+	prev, prevErr := e.store.GetSourceState(name)
+	_ = e.store.SaveSourceState(name, e.isEnabled(name), 0, cur, 0, err.Error(), 0)
+
+	// 只在「由正常转失败」时通知：持续失败不重复轰炸（Dispatcher 那层还有
+	// 时间窗去重，这里先挡掉最常见的重复来源）。从没跑过的源不通知——
+	// 首次启动就失败的告警，用户点开设置页就能看到。
+	if prevErr != nil || prev.LastError != "" {
+		return
+	}
+	e.mu.RLock()
+	hook := e.onFailure
+	e.mu.RUnlock()
+	if hook != nil {
+		go hook(name, err)
+	}
 }

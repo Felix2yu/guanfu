@@ -40,6 +40,11 @@ type DawarichSource struct {
 }
 
 func NewDawarichSource(cfg config.SourceConfig) *DawarichSource {
+	// 适配器自报家门：认证方式与 Key 请求头都靠它解析，
+	// 不依赖调用方记得填 Name（测试与页面配置两条路径都会经过这里）。
+	if cfg.Name == "" {
+		cfg.Name = "dawarich"
+	}
 	return &DawarichSource{cfg: cfg, loc: model.LocalLocation()}
 }
 
@@ -151,7 +156,9 @@ func (d *DawarichSource) fetchVisits(ctx context.Context, start, end time.Time, 
 	if err != nil {
 		return nil, err
 	}
-	req.Header.Set("Authorization", "Bearer "+d.cfg.APIKey)
+	if err := d.cfg.ApplyAuth(req); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 25 * time.Second}

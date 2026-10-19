@@ -40,6 +40,11 @@ type HuozhiSource struct {
 // NewHuozhiSource 创建适配器。未配置 BaseURL/APIKey 时 Sync 返回明确错误，
 // 引擎会把它记录到 sources.last_error，不影响其他源。
 func NewHuozhiSource(cfg config.SourceConfig) *HuozhiSource {
+	// 适配器自报家门：认证方式与 Key 请求头都靠它解析，
+	// 不依赖调用方记得填 Name（测试与页面配置两条路径都会经过这里）。
+	if cfg.Name == "" {
+		cfg.Name = "huozhi"
+	}
 	return &HuozhiSource{cfg: cfg, loc: model.LocalLocation()}
 }
 
@@ -139,7 +144,9 @@ func (h *HuozhiSource) fetchPage(ctx context.Context, start, end time.Time, page
 	if err != nil {
 		return nil, 0, 0, err
 	}
-	req.Header.Set("X-API-Key", h.cfg.APIKey)
+	if err := h.cfg.ApplyAuth(req); err != nil {
+		return nil, 0, 0, err
+	}
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}

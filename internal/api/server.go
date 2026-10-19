@@ -5,8 +5,15 @@
 //	GET  /api/v1/health          健康检查
 //	GET  /api/v1/events          事件列表（date/from/to/source/type/limit/offset）
 //	GET  /api/v1/events/counts   某日各源事件数（date）或范围每日总数（from/to，热力图）
+//	GET  /api/v1/overview        总览聚合（from/to：区间合计 + 逐日收支 + 来源分布）
 //	GET  /api/v1/range           库日期范围（日历边界）
 //	GET  /api/v1/sources         源同步状态
+//	GET  /api/v1/settings        端点配置（源 + 通知渠道）、策略开关
+//	PUT  /api/v1/settings/endpoints/{name}   保存端点配置（页面优先）
+//	DELETE /api/v1/settings/endpoints/{name} 删除页面配置（回到环境变量）
+//	POST /api/v1/settings/endpoints/{name}/verify  连通性探测
+//	POST /api/v1/settings/notify/{name}/test       通知渠道测试发送
+//	PUT  /api/v1/settings/policy                   应用级开关
 //	GET  /api/v1/export          全量/区间导出（JSON，流式；防锁定）
 //	POST /api/v1/sync/{source}   手动同步（{source}=all 表示全部）
 //	GET  /api/v1/media/...       媒体代理（见 media.go）
@@ -22,23 +29,28 @@ import (
 	"time"
 
 	"github.com/Felix2yu/guanfu/internal/config"
+	"github.com/Felix2yu/guanfu/internal/settings"
 	"github.com/Felix2yu/guanfu/internal/store"
 	"github.com/Felix2yu/guanfu/internal/sync"
 )
 
 // Server API 服务。
 type Server struct {
-	store   *store.Store
-	engine  *sync.Engine
-	media   *MediaProxy
-	mux     *http.ServeMux
-	sources map[string]config.SourceConfig
+	store  *store.Store
+	engine *sync.Engine
+	media  *MediaProxy
+	mux    *http.ServeMux
+	// settings 是「env + 页面配置」的唯一真相源；sources 是它当前生效的快照读法。
+	// 用函数而不是字段快照，页面保存后无需通知本层刷新。
+	settings *settings.Manager
+	sources  func() map[string]config.SourceConfig
 }
 
-// NewServer 创建 API 服务并注册路由。sources 用于媒体代理回源与设置页展示配置状态。
-func NewServer(st *store.Store, engine *sync.Engine, sources map[string]config.SourceConfig) *Server {
-	s := &Server{store: st, engine: engine, mux: http.NewServeMux(), sources: sources}
-	s.media = NewMediaProxy(sources)
+// NewServer 创建 API 服务并注册路由。mgr 提供生效配置与页面保存能力。
+func NewServer(st *store.Store, engine *sync.Engine, mgr *settings.Manager) *Server {
+	s := &Server{store: st, engine: engine, mux: http.NewServeMux(), settings: mgr}
+	s.sources = func() map[string]config.SourceConfig { return mgr.Sources() }
+	s.media = NewMediaProxy(s.sources)
 	s.routes()
 	return s
 }
@@ -49,8 +61,15 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("GET /api/v1/health", s.handleHealth)
 	s.mux.HandleFunc("GET /api/v1/events", s.handleEvents)
 	s.mux.HandleFunc("GET /api/v1/events/counts", s.handleCounts)
+	s.mux.HandleFunc("GET /api/v1/overview", s.handleOverview)
 	s.mux.HandleFunc("GET /api/v1/range", s.handleRange)
 	s.mux.HandleFunc("GET /api/v1/sources", s.handleSources)
+	s.mux.HandleFunc("GET /api/v1/settings", s.handleSettings)
+	s.mux.HandleFunc("PUT /api/v1/settings/endpoints/{name}", s.handleSaveEndpoint)
+	s.mux.HandleFunc("DELETE /api/v1/settings/endpoints/{name}", s.handleResetEndpoint)
+	s.mux.HandleFunc("POST /api/v1/settings/endpoints/{name}/verify", s.handleVerifyEndpoint)
+	s.mux.HandleFunc("POST /api/v1/settings/notify/{name}/test", s.handleTestNotify)
+	s.mux.HandleFunc("PUT /api/v1/settings/policy", s.handleSavePolicy)
 	s.mux.HandleFunc("GET /api/v1/export", s.handleExport)
 	s.mux.HandleFunc("POST /api/v1/sync/{source}", s.handleSync)
 	s.media.Routes(s.mux)
@@ -145,6 +164,26 @@ func (s *Server) handleCounts(w http.ResponseWriter, r *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": counts})
 }
 
+// dateRe 日期参数的基本形状校验。只挡明显的垃圾输入（空串、多段路径、SQL 片段），
+// 真正的边界判断留给 local_date 的字符串比较（YYYY-MM-DD 定长可直接比较）。
+var dateRe = regexp.MustCompile(`^\d{4}-\d{2}-\d{2}$`)
+
+// handleOverview 总览页聚合：区间合计、逐日收支、来源分布一次取回。
+func (s *Server) handleOverview(w http.ResponseWriter, r *http.Request) {
+	q := r.URL.Query()
+	from, to := q.Get("from"), q.Get("to")
+	if !dateRe.MatchString(from) || !dateRe.MatchString(to) {
+		writeErr(w, http.StatusBadRequest, "需要 from 与 to（YYYY-MM-DD）")
+		return
+	}
+	ov, err := s.store.Overview(from, to)
+	if err != nil {
+		writeErr(w, http.StatusInternalServerError, "聚合失败: "+err.Error())
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": ov})
+}
+
 func (s *Server) handleRange(w http.ResponseWriter, r *http.Request) {
 	min, max, err := s.store.DateRange()
 	if err != nil {
@@ -178,9 +217,11 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	}
 	// 配置里的源 + 库里出现过的源都要列出来：只同步过一次或从没跑过的源，
 	// 在设置页消失等于让用户以为"没配上"。
-	names := make([]string, 0, len(s.sources)+len(states))
+	srcs := s.sources()
+
+	names := make([]string, 0, len(srcs)+len(states))
 	seen := map[string]bool{}
-	for name := range s.sources {
+	for name := range srcs {
 		if !seen[name] {
 			seen[name] = true
 			names = append(names, name)
@@ -196,12 +237,16 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 
 	out := make([]sourceView, 0, len(names))
 	for _, name := range names {
-		cfg, hasCfg := s.sources[name]
+		cfg, hasCfg := srcs[name]
 		st := byName[name]
+		auth := config.AuthKind(name)
+		if hasCfg && config.IsValidAuth(cfg.Auth) {
+			auth = cfg.Auth // 页面可能改过认证方式，展示要跟实际发的一致
+		}
 		v := sourceView{
 			BaseURL:       cfg.BaseURL,
 			BaseURLEnv:    config.BaseURLEnv(name),
-			Auth:          config.AuthKind(name),
+			Auth:          auth,
 			CredentialEnv: config.CredentialEnv(name),
 			CredentialSet: cfg.APIKey != "",
 		}
@@ -212,11 +257,13 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 		if hasCfg {
 			// 从没跑过的源库里没有行，enabled/interval 直接按配置给。
 			v.Enabled = cfg.Enabled && cfg.BaseURL != ""
-			if st.IntervalSecs == 0 && cfg.Interval > 0 {
+			// 配置里显式给了间隔就以配置为准：页面刚改完、还没跑过一轮时，
+			// sources 表里存的是旧值，不覆盖会让两处显示对不上。
+			if cfg.Interval > 0 {
 				v.IntervalSecs = int(cfg.Interval.Seconds())
 			}
 		}
-		v.Configured = cfg.BaseURL != "" && (v.Auth == config.AuthNone || v.CredentialSet || hasOptionalCred(name))
+		v.Configured = cfg.BaseURL != "" && (auth == config.AuthNone || v.CredentialSet || hasOptionalCred(name))
 		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": out})

@@ -29,12 +29,20 @@ type Config struct {
 	// 各数据源配置。缺省时对应源标记为未配置（enabled=false 且无凭据），
 	// 同步会记录 last_error 而不是崩溃。
 	Sources map[string]SourceConfig
+	// 通知渠道配置（Unraid / Apprise）。同样可被页面配置整块覆盖。
+	Notify NotifyConfig
 }
 
 // SourceConfig 单个数据源的连接配置。
 type SourceConfig struct {
+	// Name 源名，与 Sources 的键一致。适配器需要它来解析「默认认证方式」
+	// 与「API Key 该放哪个请求头」，避免每个适配器各自抄一份常量。
+	Name    string
 	BaseURL string
 	APIKey  string
+	// Auth 认证方式（none/api_key/bearer/basic/jwt/token）。空表示用该源默认值
+	// （见 AuthKind）。页面配置可以改它，改完由适配器统一通过 ApplyAuth 生效。
+	Auth string
 	// Enabled 显式开关。规则：*_ENABLED=1 强制开；=0 强制关；
 	// 未设置时「配了 BaseURL 即自动启用」（避免配了地址却忘记开开关的静默失败）。
 	Enabled bool
@@ -47,10 +55,12 @@ type SourceConfig struct {
 }
 
 // 认证方式（供设置页展示"这个源要怎么配凭据"，不含任何密钥值）。
+// 这些是**默认值**：页面里可以为单个端点改认证方式，改完由 ApplyAuth 生效。
 const (
 	AuthNone   = "none"    // 零鉴权，不需要 key
 	AuthAPIKey = "api_key" // 自定义头（huozhi X-API-Key / immich x-api-key）
 	AuthBearer = "bearer"  // Authorization: Bearer <key>
+	AuthBasic  = "basic"   // Authorization: Basic <base64(用户名:密码)>
 	AuthJWT    = "jwt"     // Authorization: Bearer <HS256 JWT>，可填 JWT 或 用户名:密码
 	AuthToken  = "token"   // 源自己的 token 形态（mujian 三形态 / qiansi、shenshi 可选 Bearer）
 )
@@ -116,8 +126,10 @@ func Load() *Config {
 		"qingye":       365, // 园艺日记/养护：手工记录，历史价值与日记同级
 	}
 	cfg.Sources["huozhi"] = SourceConfig{
+		Name:         "huozhi",
 		BaseURL:      strings.TrimRight(os.Getenv("HUOZHI_BASE_URL"), "/"),
 		APIKey:       os.Getenv("HUOZHI_API_KEY"),
+		Auth:         strings.ToLower(strings.TrimSpace(os.Getenv("HUOZHI_AUTH"))),
 		Enabled:      sourceEnabled("HUOZHI", os.Getenv("HUOZHI_BASE_URL") != ""),
 		Interval:     getenvDuration("HUOZHI_INTERVAL", 30*time.Minute),
 		LookbackDays: getenvInt("HUOZHI_LOOKBACK_DAYS", lookback["huozhi"]),
@@ -132,15 +144,38 @@ func Load() *Config {
 		base := strings.TrimRight(os.Getenv(upper+"_BASE_URL"), "/")
 		key := os.Getenv(upper + "_API_KEY")
 		cfg.Sources[name] = SourceConfig{
+			Name:         name,
 			BaseURL:      base,
 			APIKey:       key,
+			Auth:         strings.ToLower(strings.TrimSpace(os.Getenv(upper + "_AUTH"))),
 			Enabled:      sourceEnabled(upper, base != ""),
 			Interval:     getenvDuration(upper+"_INTERVAL", 0),
 			LookbackDays: getenvInt(upper+"_LOOKBACK_DAYS", lookback[name]),
 			Metrics:      os.Getenv(upper + "_METRICS"),
 		}
 	}
+	cfg.Notify = loadNotify()
 	return cfg
+}
+
+// Clone 浅拷贝 + 两张 map 深拷贝。
+//
+// 页面覆盖要逐端点改 map 元素，直接改 env 基线会污染「恢复环境变量」的结果；
+// 每次重建生效配置都从 Clone 出来的副本改。
+func (c *Config) Clone() *Config {
+	if c == nil {
+		return &Config{}
+	}
+	cp := *c
+	cp.Sources = make(map[string]SourceConfig, len(c.Sources))
+	for k, v := range c.Sources {
+		cp.Sources[k] = v
+	}
+	cp.Notify = NotifyConfig{Channels: make(map[string]NotifyChannel, len(c.Notify.Channels))}
+	for k, v := range c.Notify.Channels {
+		cp.Notify.Channels[k] = v
+	}
+	return &cp
 }
 
 // sourceEnabled 三态开关：显式 1 开、显式 0 关、未设置按 configured 推断。

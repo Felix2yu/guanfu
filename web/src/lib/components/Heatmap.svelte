@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { monthGrid } from '../api';
+  import { monthGrid } from '../api.ts';
+  import Icon from './Icon.svelte';
 
   let {
     month,
@@ -7,7 +8,8 @@
     selected,
     minDate,
     maxDate,
-    onpick
+    onpick,
+    onShift
   }: {
     month: string;
     counts: Record<string, number>;
@@ -15,6 +17,7 @@
     minDate: string;
     maxDate: string;
     onpick: (date: string) => void;
+    onShift: (delta: number) => void;
   } = $props();
 
   const cells = $derived(monthGrid(month));
@@ -25,24 +28,30 @@
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
   }
 
-  // 强度分档（克制的中性色阶，浅色/深色分别定义）。
-  function level(n: number): string {
-    if (!n) return 'bg-zinc-100 dark:bg-zinc-800/70';
-    if (n <= 2) return 'bg-zinc-200 dark:bg-zinc-700';
-    if (n <= 5) return 'bg-zinc-300 dark:bg-zinc-600';
-    return 'bg-zinc-400 dark:bg-zinc-500';
+  // 强度按「本月最大值」分档，而不是写死 0/2/5 条——
+  // 数据一多，写死的档位会整月糊成同一块黑，热力图就失去了信息量。
+  const maxCount = $derived(Math.max(1, ...Object.values(counts)));
+
+  function levelStyle(n: number): { background: string; color: string } {
+    if (!n) return { background: 'var(--gf-chip)', color: 'var(--gf-ink-3)' };
+    const r = n / maxCount;
+    // 档位越低越接近纸色；配字颜色跟着反相，深色模式下自动反过来。
+    const mix = r <= 0.25 ? 12 : r <= 0.5 ? 30 : r <= 0.75 ? 50 : 68;
+    return {
+      background: `color-mix(in oklab, var(--gf-ink) ${mix}%, var(--gf-chip))`,
+      color: mix >= 30 ? 'var(--gf-accent-ink)' : 'var(--gf-ink-2)'
+    };
   }
 
   function cellClass(date: string | null): string {
     if (!date) return 'invisible';
-    const n = counts[date] ?? 0;
-    const isFuture = date > today;
-    const outOfRange = (minDate && date < minDate) || (maxDate && date > maxDate);
     const isSelected = date === selected;
-    let cls = `flex h-6 w-6 items-center justify-center rounded text-[10px] tabular-nums ${level(n)}`;
-    if (isSelected) cls += ' ring-2 ring-rose-500 ring-offset-1 dark:ring-offset-zinc-900';
-    if (isFuture || outOfRange) cls += ' opacity-30';
-    return cls;
+    const dim =
+      date > today || (minDate && date < minDate) || (maxDate && date > maxDate)
+        ? 'opacity-35'
+        : '';
+    const ring = isSelected ? 'ring-2 ring-ink ring-offset-2 ring-offset-surface' : '';
+    return `flex aspect-square w-full items-center justify-center rounded-md text-[11px] tabular-nums transition-colors ${dim} ${ring}`;
   }
 
   function onclick(date: string | null) {
@@ -54,20 +63,47 @@
 
   const [y, m] = $derived(month.split('-').map(Number));
   const monthTitle = $derived(`${y} 年 ${m} 月`);
+  const total = $derived(Object.values(counts).reduce((a, b) => a + b, 0));
 </script>
 
-<div class="rounded-xl border border-zinc-200 p-3 dark:border-zinc-700">
-  <div class="mb-2 flex items-center justify-between text-xs text-zinc-500 dark:text-zinc-400">
-    <span class="font-medium text-zinc-700 dark:text-zinc-300">{monthTitle}</span>
-    <span class="tabular-nums">{Object.values(counts).reduce((a, b) => a + b, 0)} 条</span>
+<div class="w-full rounded-xl border border-line bg-surface p-4">
+  <div class="mb-3 flex flex-wrap items-center gap-x-2 gap-y-1.5">
+    <button
+      type="button"
+      class="flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+      onclick={() => onShift(-1)}
+      aria-label="上个月"
+    >
+      <Icon name="chevron-left" size={14} />
+    </button>
+    <h2 class="tnum text-[14px] font-semibold">{monthTitle}</h2>
+    <button
+      type="button"
+      class="flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+      onclick={() => onShift(1)}
+      aria-label="下个月"
+    >
+      <Icon name="chevron-right" size={14} />
+    </button>
+    <span class="tnum ml-1 text-[11px] text-ink-3">{total} 条</span>
+    <span class="ml-auto flex items-center gap-1.5 text-[10px] text-ink-3">
+      少
+      {#each [0, maxCount * 0.2, maxCount * 0.6, maxCount] as lv (lv)}
+        <span class="h-2.5 w-2.5 rounded-[3px]" style:background={levelStyle(lv).background}></span>
+      {/each}
+      多
+    </span>
   </div>
-  <div class="grid grid-cols-7 gap-1">
+  <div class="grid grid-cols-7 gap-1.5">
     {#each ['一', '二', '三', '四', '五', '六', '日'] as w (w)}
-      <div class="text-center text-[10px] text-zinc-400 dark:text-zinc-500">{w}</div>
+      <div class="pb-1 text-center text-[10px] text-ink-3">{w}</div>
     {/each}
     {#each cells as cell, i (i)}
       <button
+        type="button"
         class={cellClass(cell)}
+        style:background={cell ? levelStyle(counts[cell] ?? 0).background : undefined}
+        style:color={cell ? levelStyle(counts[cell] ?? 0).color : undefined}
         disabled={!cell || cell > today || (minDate !== '' && cell < minDate)}
         onclick={() => onclick(cell)}
         title={cell ? `${cell} · ${counts[cell] ?? 0} 条` : ''}

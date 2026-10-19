@@ -105,23 +105,52 @@ cd web && pnpm install && pnpm dev
 | `SHENSHI_BASE_URL` / `SHENSHI_API_KEY` | — | 慎始任务（任务完成/复盘/习惯打卡；未配 token 的实例放通） |
 | `LIUXIA_BASE_URL` | — | 流霞霞光预报（REST 零鉴权，**无需 key**） |
 | `QINGYE_BASE_URL` | — | 青野集园艺（植物日记 + 养护记录；REST 零鉴权，**无需 key**） |
+| `<源>_AUTH` | 按源推断 | 认证方式：`none`/`api_key`/`bearer`/`basic`/`jwt`/`token`，默认见下 |
+| `GUANFU_SECRET_KEY` | 自动生成 | 设置页凭据的加密密钥；缺省用 `<GUANFU_DB>.key`（自动创建，0600） |
+| `UNRAID_BASE_URL` / `UNRAID_API_KEY` | — | Unraid 通知（GraphQL `createNotification`，`X-API-Key`） |
+| `UNRAID_AUTH` / `UNRAID_ENABLED` | `api_key` / 按地址推断 | 渠道鉴权方式与启用开关 |
+| `APPRISE_BASE_URL` / `APPRISE_KEY` | — | Apprise 通知（有 Key 走 `POST /notify/{key}`，否则 `POST /notify` + `urls`） |
+| `APPRISE_TARGETS` / `APPRISE_API_KEY` | — | 无 Key 模式的目标 URL 列表（空格/逗号/换行分隔）、渠道鉴权凭据 |
 
 各源**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；默认回溯天数：mujian 365 / diarum 365 / zhichang 30 / dawarich 30 / bili-history 90 / immich 365（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
+
+认证方式不配时按源推断：huozhi / immich 为 `api_key`，mujian 为 `jwt`，其余为 `bearer`；
+`api_key` 的请求头也按源区分（huozhi `X-API-Key`、immich `x-api-key`、mujian `X-Auth-Token`）。
+`basic` 的凭据写 `用户名:密码`（也接受直接给 base64）。
+
+### 配置优先级：页面 > 环境变量 > 内置默认
+
+设置页可以覆盖任意端点的**地址 / 认证方式 / 凭据 / 启用 / 同步间隔**，与环境变量共存：
+
+- **按端点整块覆盖**：某个端点在页面保存过一行，这五项就全部以页面为准，不做逐字段回退。
+- **留空就是清空**：页面里把地址清空保存，该端点就是"没配地址"，不会偷偷用回 env 的值
+  ——否则你永远无法通过页面关掉一个 env 里配着的源。
+- **「恢复环境变量」= 删除该行**：删掉页面配置，端点立刻回到 env 的值。
+- **保存即生效**：该源的适配器按新配置重建并重新调度，**不需要重启进程**
+  （env 改动仍然需要重启，因为配置在启动时读取）。
+- 通知渠道（Unraid / Apprise）走同一套合并逻辑，同样支持整块覆盖与恢复。
+
+页面写入的凭据以 AES-256-GCM 密文落库（`enc:v1:` 前缀 + base64），接口只回末 4 位掩码，
+明文不会经过浏览器；密钥优先取 `GUANFU_SECRET_KEY`，否则用数据目录下的 `guanfu.db.key`
+（首次启动自动生成，权限 0600）。换密钥后旧密文解不开，设置页会把该端点标红提示重填。
 
 ## 架构
 
 ```
 cmd/guanfu/         入口：配置 → store → 引擎 → API → 优雅停机
 internal/
-  config/           环境变量配置（凭据只进 env）
+  config/           环境变量配置（env 基线：源 + 通知渠道 + 认证方式白名单）
   model/            统一事件模型（events）+ 时区 + GCJ-02→WGS-84
-  store/            SQLite：events（幂等 upsert）+ sources（游标/状态）
-  sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离
+  store/            SQLite：events（幂等 upsert）+ sources（游标/状态）+ endpoint_config/app_setting
+  secret/           AES-256-GCM 凭据加解密与掩码（密钥 env 优先，否则落 0600 文件）
+  settings/         配置合并层：env 基线 ← 页面覆盖 → 生效快照（+ 探测、热重建回调）
+  notify/           通知分发：Unraid GraphQL / Apprise，含去重窗口与失败聚合
+  sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离 + 热重建
   sources/          数据源适配器（huozhi/mujian/diarum/immich/zhichang/dawarich/bili-history/qiansi/shenshi/liuxia/qingye）
-  api/              REST API（/api/v1/events 等）+ 媒体代理
+  api/              REST API（/api/v1/events 等）+ 媒体代理 + 设置页接口
   mcp/              只读 MCP server：5 个查询/聚合工具，HTTP(/mcp) 与 stdio 两种传输
   web/              前端托管：磁盘目录优先，go:embed 内嵌兜底（all:dist）
-web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 三视图 + 设置页）
+web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设置页）
 ```
 
 ### 统一事件模型
@@ -147,8 +176,15 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 三视�
 | GET | `/api/v1/events?date=YYYY-MM-DD` | 事件列表（支持 from/to/source/type/limit/offset） |
 | GET | `/api/v1/events/counts?date=` | 某日各源事件数 |
 | GET | `/api/v1/events/counts?from=&to=` | 范围内每日事件总数（日历热力图数据源） |
+| GET | `/api/v1/overview?from=&to=` | 概览页聚合：区间指标 `totals`、每日趋势 `days`、来源构成 `sources`（一次请求出整屏；`from`/`to` 必填） |
 | GET | `/api/v1/range` | 库日期范围（日历边界） |
 | GET | `/api/v1/sources` | 源同步状态 + 连接配置（端点、认证方式、凭据是否已配；**永不回显凭据值**） |
+| GET | `/api/v1/settings` | 设置页全量：端点清单（含 `origin`=page/env、env 基线值、凭据掩码）、通知开关、密钥来源 |
+| PUT | `/api/v1/settings/endpoints/{name}` | 保存端点（`base_url`/`auth`/`secret`/`enabled`/`interval_secs`/`extras`）；`secret` 不传=保留，传空串=清空 |
+| DELETE | `/api/v1/settings/endpoints/{name}` | 删除页面配置（= 恢复环境变量），返回删除后的视图 |
+| POST | `/api/v1/settings/endpoints/{name}/verify` | 用表单草稿探测地址+认证（未保存也能测）；连不通/认证拒绝仍返回 200 + `ok:false` |
+| POST | `/api/v1/settings/notify/{name}/test` | 测试发送（`unraid`/`apprise`），上游失败同样 200，带 `status`/`response`/`error` |
+| PUT | `/api/v1/settings/policy` | 开关项（目前只有 `notify_on_sync_failure`） |
 | GET | `/api/v1/export?from&to&format=json` | 全量或区间导出（流式 JSON，防锁定；页面右上「导出」按钮即此端点） |
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
 | GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
@@ -166,9 +202,12 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 三视�
 - **时间线**：以当前日期为终点向前开窗（默认 30 天，可「加载更早 30 天」外扩），
   按日分组、日子倒序、日内时刻正序。窗口撞上服务端 1000 条上限会显式提示不完整。
 
-`/settings` 设置页：外观三选（跟随系统 / 浅色 / 深色）+ 数据源只读总览
-（状态、端点、认证方式、凭据配没配、间隔、上次同步与错误）。明暗走
+`/settings` 设置页：外观三选（跟随系统 / 浅色 / 深色）+ **可编辑**的数据源总览
+（行内展开改地址 / 认证方式 / 凭据 / 间隔 / 启用，带「保存」「测试连通」「恢复环境变量」）
++ 通知渠道双卡（Unraid / Apprise，含「保存并测试」）+ 同步失败推送开关。
+表格行首徽标标明配置来源（`页面` / `env`）。明暗走
 `<html class="dark">`，`app.html` 里一段内联脚本在首屏前定色，避免深色模式白闪。
+窄屏（<768px）收起端点 / 认证 / 凭据 / 间隔列，只留「源 · 状态 · 编辑」，避免要横向滑动才能点到编辑。
 
 ## MCP（只读）
 
@@ -238,11 +277,35 @@ guanfu mcp
 
 ## 安全约定
 
-- 所有 API key 只经环境变量传入；**不写入仓库、不写入文档、不进镜像层**
+- **凭据两条路**：环境变量（不进仓库、不进文档、不进镜像层）；或在设置页填写，
+  此时以 AES-256-GCM 密文落进 SQLite，接口只回末 4 位掩码，明文不进浏览器、不进日志
+- 加密密钥优先 `GUANFU_SECRET_KEY`；未设置时自动在数据目录生成 `guanfu.db.key`（0600）。
+  **备份数据库要连密钥一起备份**，否则页面里存的凭据无法恢复
+- 观复**没有内置登录**：设置页能改端点与凭据，属于管理面。只在内网监听，或放到公网时
+  在反向代理上套一层认证（Basic / OIDC 都行），别直接暴露 `:8788`
 - 各源 key 均为全权凭证（huozhi/mujian/dawarich/immich 概莫如此），观复只发 GET 请求
 - 媒体代理做路径穿越防护（mujian key 字符集 + `..` 拒绝）与 SSRF 防护（bili 封面仅限 `*.hdslb.com` + https）
 - MCP 只有 5 个只读查询工具，且返回体刻意剥掉 `detail_json` 与媒体路径；要收紧就在 `GUANFU_MCP_TOKEN` 配一个值，或 `GUANFU_MCP_ENABLED=0` 整条关掉
 - SQLite 文件位于 `/app/data` 卷，纳入既有备份体系（docker-db-auto-backup）
+
+## 通知
+
+两个渠道，可在设置页配置地址 / 认证 / 凭据 / 启用，也支持环境变量（页面优先）：
+
+- **Unraid**：走 Unraid 7 的 GraphQL，`POST /graphql` 的 `createNotification` mutation。
+  标题进 `title` + `subject`，严重级别映射到 `importance`（info→`NORMAL`、warning→`WARNING`、alert→`ALERT`）。
+  注意 **HTTP 200 不代表成功**——GraphQL 会带 `errors[]`，那也判失败。
+- **Apprise**：`POST /notify/{key}`（Key 模式）或 `POST /notify` + `urls` 列表（Targets 模式）。
+  观复的 info/warning/alert 映射为 Apprise 的 `info`/`warning`/`failure`；
+  返回体 `success:false` 判失败。
+
+触发场景只有两个：设置页的「保存并测试」（先落库再发，否则测的是旧配置）与**同步失败**。
+同步失败推送默认关闭，打开后要同时满足两个条件才发：
+
+1. 该源**由正常转失败**（`last_error` 从空变成有值）；持续失败不重复，从没成功过的源也不发
+   ——首次启动就失败的告警，点开设置页就能看到。
+2. 距上次推送同一源超过 6 小时（去重键 `sync-failure:<源名>`）。窗口内即使刚恢复又失败，
+   也不会再推，避免网络抖动刷屏。
 
 ## 开发
 

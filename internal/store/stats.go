@@ -54,6 +54,41 @@ type StatsResult struct {
 	Note       string `json:"note,omitempty"`
 }
 
+// Overview 总览页一次拉齐的聚合结果：区间合计 + 逐日收支 + 按来源分布。
+//
+// 由两次 Stats 拼成（口径与时间轴、明细页完全一致），不让前端自己累加：
+// 两处算法一旦漂移，就会出现「卡片说 ¥7,356、明细加起来 ¥7,412」这种没人能解释的差。
+type Overview struct {
+	From       string                 `json:"from"`
+	To         string                 `json:"to"`
+	TotalCount int                    `json:"total_count"`
+	Totals     map[string]MoneyTotals `json:"totals"`
+	// Days 只包含有事件的日期（稀疏），空档由前端补零后绘图。
+	Days []StatRow `json:"days"`
+	// Sources 按条数倒序，长尾自然沉底（与图例顺序一致）。
+	Sources []StatRow `json:"sources"`
+}
+
+// Overview 聚合 [from, to] 的总览数据。
+func (s *Store) Overview(from, to string) (*Overview, error) {
+	days, err := s.Stats(StatFilter{From: from, To: to, GroupBy: "day"})
+	if err != nil {
+		return nil, err
+	}
+	sources, err := s.Stats(StatFilter{From: from, To: to, GroupBy: "source"})
+	if err != nil {
+		return nil, err
+	}
+	return &Overview{
+		From:       days.From,
+		To:         days.To,
+		TotalCount: days.TotalCount,
+		Totals:     days.Totals,
+		Days:       days.Rows,
+		Sources:    sources.Rows,
+	}, nil
+}
+
 // StatFilter 聚合查询条件。From/To 为 local_date 闭区间，均必填。
 type StatFilter struct {
 	From      string

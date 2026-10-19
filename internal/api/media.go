@@ -40,16 +40,18 @@ var qingyeFileRe = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._-]{0,190}$`)
 // immichSizes 允许代理的缩略图尺寸（original 走独立端点）。
 var immichSizes = map[string]bool{"thumbnail": true, "preview": true, "fullsize": true}
 
-// MediaProxy 媒体代理（持各源连接信息，仅用于回源）。
+// MediaProxy 媒体代理（回源时取各源当前生效的连接信息）。
 type MediaProxy struct {
-	origins map[string]config.SourceConfig
+	// origins 用函数而不是快照：设置页改完地址/凭据后，媒体回源要立刻用新值，
+	// 否则会出现「事件列表已更新、缩略图还在打旧地址」的错位。
+	origins func() map[string]config.SourceConfig
 	client  *http.Client
 }
 
-// NewMediaProxy 基于配置构建代理。未配置 BaseURL 的源返回 404。
-func NewMediaProxy(sources map[string]config.SourceConfig) *MediaProxy {
+// NewMediaProxy 构建代理。未配置 BaseURL 的源返回 404。
+func NewMediaProxy(origins func() map[string]config.SourceConfig) *MediaProxy {
 	return &MediaProxy{
-		origins: sources,
+		origins: origins,
 		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
@@ -103,7 +105,7 @@ func (p *MediaProxy) handleMujianMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "非法媒体键")
 		return
 	}
-	origin, ok := p.origins["mujian"]
+	origin, ok := p.origins()["mujian"]
 	if !ok || origin.BaseURL == "" {
 		writeErr(w, http.StatusNotFound, "mujian 未配置")
 		return
@@ -128,7 +130,7 @@ func (p *MediaProxy) handleBiliMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "非法封面地址")
 		return
 	}
-	origin, ok := p.origins["bili-history"]
+	origin, ok := p.origins()["bili-history"]
 	if !ok || origin.BaseURL == "" {
 		writeErr(w, http.StatusNotFound, "bili-history 未配置")
 		return
@@ -189,7 +191,7 @@ func (p *MediaProxy) handleImmichMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "非法资产 ID")
 		return
 	}
-	origin, ok := p.origins["immich"]
+	origin, ok := p.origins()["immich"]
 	if !ok || origin.BaseURL == "" || origin.APIKey == "" {
 		writeErr(w, http.StatusNotFound, "immich 未配置")
 		return
@@ -225,7 +227,7 @@ func (p *MediaProxy) handleQingyeMedia(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "非法媒体文件名")
 		return
 	}
-	origin, ok := p.origins["qingye"]
+	origin, ok := p.origins()["qingye"]
 	if !ok || origin.BaseURL == "" {
 		writeErr(w, http.StatusNotFound, "qingye 未配置")
 		return

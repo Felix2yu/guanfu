@@ -4,14 +4,84 @@
    不定义这条 custom-variant 的话 Tailwind v4 的 dark: 只认媒体查询，手动切换会失效。 */
 @custom-variant dark (&:where(.dark, .dark *));
 
-/* 观复设计基调：紧凑、信息密度优先、单行布局（与 mujian/diarum 一脉相承）。
+/* 观复界面基调：米灰纸面 + 近黑正文 + 细灰边框 + 克制圆角。
+   所有颜色走 CSS 变量，深浅色只是换一套变量值，组件里不写死颜色。
    macOS 下 font-smoothing 用 auto（项目约定：antialiased 会让字体发糊）。 */
 :root {
   color-scheme: light;
+
+  --gf-canvas: #f5f5f3;
+  --gf-surface: #ffffff;
+  --gf-surface-2: #fbfbf8;
+  --gf-line: #e5e3dd;
+  --gf-line-strong: #d3cfc5;
+  --gf-ink: #1b1d22;
+  --gf-ink-2: #6b6e76;
+  --gf-ink-3: #8a8d95;
+  --gf-accent: #1b1d22;
+  --gf-accent-ink: #f5f5f3;
+  --gf-pos: #2f7a5e;
+  --gf-neg: #b0604a;
+  --gf-chip: #f1efe9;
+
+  /* 数据源配色：11 个源固定成一组低饱和色，图例与环图共用。 */
+  --src-1: #22242a;
+  --src-2: #6e7280;
+  --src-3: #a9a49b;
+  --src-4: #3a7d5c;
+  --src-5: #b0604a;
+  --src-6: #b98a2f;
+  --src-7: #7a8b6f;
+  --src-8: #8c7b8b;
+  --src-9: #5b7a99;
+  --src-10: #8fa1b3;
+  --src-11: #6f8c7a;
 }
 
 :root.dark {
   color-scheme: dark;
+
+  --gf-canvas: #131418;
+  --gf-surface: #1a1c21;
+  --gf-surface-2: #16181c;
+  --gf-line: #2a2d34;
+  --gf-line-strong: #3c4048;
+  --gf-ink: #ecebe7;
+  --gf-ink-2: #a2a5ad;
+  --gf-ink-3: #7d818a;
+  --gf-accent: #ecebe7;
+  --gf-accent-ink: #16181c;
+  --gf-pos: #5aa588;
+  --gf-neg: #cf8168;
+  --gf-chip: #23262c;
+
+  --src-1: #d7d5ce;
+  --src-2: #9ca1ac;
+  --src-3: #b8b2a6;
+  --src-4: #6fb08c;
+  --src-5: #d68d74;
+  --src-6: #d6a85b;
+  --src-7: #9db08d;
+  --src-8: #b39bb3;
+  --src-9: #8ca9c6;
+  --src-10: #a9bdd0;
+  --src-11: #8fb09c;
+}
+
+@theme inline {
+  --color-canvas: var(--gf-canvas);
+  --color-surface: var(--gf-surface);
+  --color-surface-2: var(--gf-surface-2);
+  --color-line: var(--gf-line);
+  --color-line-strong: var(--gf-line-strong);
+  --color-ink: var(--gf-ink);
+  --color-ink-2: var(--gf-ink-2);
+  --color-ink-3: var(--gf-ink-3);
+  --color-accent: var(--gf-accent);
+  --color-accent-ink: var(--gf-accent-ink);
+  --color-pos: var(--gf-pos);
+  --color-neg: var(--gf-neg);
+  --color-chip: var(--gf-chip);
 }
 
 html {
@@ -21,11 +91,18 @@ html {
 
 body {
   margin: 0;
+  background: var(--gf-canvas);
+  color: var(--gf-ink);
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue',
     'Microsoft YaHei', sans-serif;
   font-size: 14px;
   line-height: 1.5;
+}
+
+/* 数字统一用等宽字形：卡片之间、行之间才能纵向对齐比较。 */
+.tnum {
+  font-variant-numeric: tabular-nums;
 }
 
 /* 时间轴左侧竖线 */
@@ -35,5 +112,94 @@ body {
   top: 0;
   bottom: 0;
   width: 2px;
-  background: color-mix(in oklab, currentColor 12%, transparent);
+  background: var(--gf-line);
+}
+
+/* 横向滚动区不显示滚动条（源 chips、移动端导航），滚动本身仍然可用。 */
+.no-scrollbar {
+  scrollbar-width: none;
+  -ms-overflow-style: none;
+}
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+
+/* 焦点可见性：键盘导航时才出轮廓，鼠标点击不打扰。 */
+:focus-visible {
+  outline: 2px solid var(--gf-ink-2);
+  outline-offset: 2px;
+  border-radius: 4px;
+}
+
+/* ---- 设置页表单基元 ----
+   这些是「形状」而不是「颜色语义」，用 @utility 收敛，
+   免得每个输入框/按钮各抄一长串类名，改一次要改十几处。 */
+@utility field {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--gf-line);
+  background: var(--gf-surface);
+  padding: 6px 9px;
+  font-size: 12.5px;
+  line-height: 1.45;
+  color: var(--gf-ink);
+  outline: none;
+  transition: border-color 120ms;
+  &::placeholder {
+    color: var(--gf-ink-3);
+  }
+  &:focus {
+    border-color: var(--gf-ink-3);
+  }
+  &:disabled {
+    opacity: 0.55;
+  }
+}
+
+@utility btn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  border-radius: 8px;
+  border: 1px solid var(--gf-line);
+  background: var(--gf-surface);
+  padding: 5px 10px;
+  font-size: 12px;
+  font-weight: 500;
+  color: var(--gf-ink);
+  white-space: nowrap;
+  transition:
+    background-color 120ms,
+    border-color 120ms;
+  &:hover:not(:disabled) {
+    background: var(--gf-chip);
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+@utility btn-primary {
+  background: var(--gf-accent);
+  border-color: var(--gf-accent);
+  color: var(--gf-accent-ink);
+  &:hover:not(:disabled) {
+    background: var(--gf-accent);
+    filter: brightness(1.15);
+  }
+}
+
+/* 配置来源徽标：页面承接 vs 环境变量 */
+@utility tag {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  border-radius: 999px;
+  padding: 1px 6px;
+  font-size: 10.5px;
+  line-height: 1.5;
+  background: var(--gf-chip);
+  color: var(--gf-ink-2);
 }

@@ -4,7 +4,7 @@
 // 建写接口，还会把无鉴权的 /api/v1 多开一个写入口。
 
 export type Theme = 'system' | 'light' | 'dark';
-export type ViewMode = 'day' | 'calendar' | 'timeline';
+export type ViewMode = 'overview' | 'day' | 'calendar' | 'timeline';
 
 const THEME_KEY = 'guanfu.theme';
 const VIEW_KEY = 'guanfu.view';
@@ -16,14 +16,18 @@ export const THEME_LABELS: Record<Theme, string> = {
 };
 
 export const VIEW_LABELS: Record<ViewMode, string> = {
+  overview: '总览',
   day: '当日',
   calendar: '日历',
   timeline: '时间线'
 };
 
+/** 侧栏/标签栏的顺序：总览在最前，设置单独走路由。 */
+export const VIEW_ORDER: ViewMode[] = ['overview', 'day', 'calendar', 'timeline'];
+
 export const ui = $state({
   theme: 'system' as Theme,
-  view: 'day' as ViewMode,
+  view: 'overview' as ViewMode,
   // 系统当前是不是深色（跟随系统时用于显示"当前实际生效的是哪套"）。
   systemDark: false
 });
@@ -35,7 +39,7 @@ function isTheme(v: string | null): v is Theme {
 }
 
 function isView(v: string | null): v is ViewMode {
-  return v === 'day' || v === 'calendar' || v === 'timeline';
+  return v === 'overview' || v === 'day' || v === 'calendar' || v === 'timeline';
 }
 
 function applyTheme(): void {

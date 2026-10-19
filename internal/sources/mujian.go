@@ -45,6 +45,11 @@ type MujianSource struct {
 }
 
 func NewMujianSource(cfg config.SourceConfig) *MujianSource {
+	// 适配器自报家门：认证方式与 Key 请求头都靠它解析，
+	// 不依赖调用方记得填 Name（测试与页面配置两条路径都会经过这里）。
+	if cfg.Name == "" {
+		cfg.Name = "mujian"
+	}
 	return &MujianSource{cfg: cfg, loc: model.LocalLocation()}
 }
 
@@ -178,7 +183,9 @@ func (m *MujianSource) fetchRecords(ctx context.Context, day string) ([]mujianRe
 	if err != nil {
 		return nil, err
 	}
-	m.setAuth(req)
+	if err := m.setAuth(req); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 20 * time.Second}
@@ -204,7 +211,9 @@ func (m *MujianSource) fetchPhotos(ctx context.Context, recordID uint) ([]mujian
 	if err != nil {
 		return nil, err
 	}
-	m.setAuth(req)
+	if err := m.setAuth(req); err != nil {
+		return nil, err
+	}
 	req.Header.Set("Accept", "application/json")
 
 	client := &http.Client{Timeout: 15 * time.Second}
@@ -227,12 +236,9 @@ func (m *MujianSource) fetchPhotos(ctx context.Context, recordID uint) ([]mujian
 	return photos, nil
 }
 
-// setAuth 按 mujian 支持的三种传法之一发送 token（仅配置了 key 时）。
-func (m *MujianSource) setAuth(req *http.Request) {
-	if m.cfg.APIKey == "" {
-		return
-	}
-	req.Header.Set("X-Auth-Token", m.cfg.APIKey)
+// setAuth 按配置的认证方式发 token（默认 X-Auth-Token；也可改 Bearer/Basic）。
+func (m *MujianSource) setAuth(req *http.Request) error {
+	return m.cfg.ApplyAuth(req)
 }
 
 // mapRecord 映射演出记录。date 为 unix 秒，按本地时区解释（mujian dateText

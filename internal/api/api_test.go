@@ -9,6 +9,8 @@ import (
 
 	"github.com/Felix2yu/guanfu/internal/config"
 	"github.com/Felix2yu/guanfu/internal/model"
+	"github.com/Felix2yu/guanfu/internal/secret"
+	"github.com/Felix2yu/guanfu/internal/settings"
 	"github.com/Felix2yu/guanfu/internal/store"
 	"github.com/Felix2yu/guanfu/internal/sync"
 )
@@ -20,8 +22,16 @@ func newTestServer(t *testing.T, sources map[string]config.SourceConfig) (*Serve
 		t.Fatalf("开库失败: %v", err)
 	}
 	t.Cleanup(func() { st.Close() })
+	box, err := secret.FromPassphrase("test-secret")
+	if err != nil {
+		t.Fatalf("初始化加密器失败: %v", err)
+	}
+	mgr, err := settings.NewManager(st, &config.Config{Sources: sources}, box)
+	if err != nil {
+		t.Fatalf("初始化配置层失败: %v", err)
+	}
 	engine := sync.NewEngine(st, sync.NewRegistry(), func(string) bool { return false })
-	return NewServer(st, engine, sources), st
+	return NewServer(st, engine, mgr), st
 }
 
 func seedEvent(t *testing.T, st *store.Store, source, extID, date string, media []model.MediaRef) {
@@ -311,5 +321,68 @@ func TestEventsFillProxyPathImmich(t *testing.T) {
 	}
 	if got := resp.Data[0].Media[0].ProxyPath; got != "/api/v1/media/immich/"+id {
 		t.Fatalf("immich 代理路径异常: %q", got)
+	}
+}
+
+// ---------- overview（总览页聚合） ----------
+
+func TestOverviewEndpoint(t *testing.T) {
+	srv, st := newTestServer(t, nil)
+	seed := func(id, source, date string, cents int64, detailType string) {
+		t.Helper()
+		ev := &model.Event{
+			Source: source, ExternalID: id, EventType: model.EventTransaction,
+			TimePrecision: model.PrecisionSecond, OccurredAt: 1_760_000_000,
+			LocalDate: date, Title: id, AmountCents: cents, Currency: "CNY",
+		}
+		if detailType != "" {
+			ev.Detail = map[string]any{"type": detailType}
+		}
+		if _, err := st.UpsertEvent(ev); err != nil {
+			t.Fatalf("种子失败: %v", err)
+		}
+	}
+	seed("a", "huozhi", "2026-10-02", 3000, "expense")
+	seed("b", "huozhi", "2026-10-02", 900000, "income")
+	seed("c", "shenshi", "2026-10-03", 0, "")
+
+	rec := httptest.NewRecorder()
+	req := httptest.NewRequest("GET", "/api/v1/overview?from=2026-10-01&to=2026-10-31", nil)
+	srv.Handler().ServeHTTP(rec, req)
+	if rec.Code != http.StatusOK {
+		t.Fatalf("HTTP %d: %s", rec.Code, rec.Body.String())
+	}
+	var resp struct {
+		Code int            `json:"code"`
+		Data store.Overview `json:"data"`
+	}
+	if err := json.Unmarshal(rec.Body.Bytes(), &resp); err != nil {
+		t.Fatalf("解析失败: %v", err)
+	}
+	if resp.Code != 0 {
+		t.Fatalf("code 期望 0，实际 %d", resp.Code)
+	}
+	got := resp.Data
+	if got.TotalCount != 3 || len(got.Days) != 2 || len(got.Sources) != 2 {
+		t.Fatalf("聚合结果不符: %+v", got)
+	}
+	if cny := got.Totals["CNY"]; cny.IncomeCents != 900000 || cny.ExpenseCents != 3000 {
+		t.Fatalf("合计有误: %+v", cny)
+	}
+	// 来源分布按条数倒序：huozhi 两条在前。
+	if got.Sources[0].Key != "huozhi" || got.Sources[0].Count != 2 {
+		t.Fatalf("来源分布有误: %+v", got.Sources)
+	}
+}
+
+func TestOverviewRejectsBadParams(t *testing.T) {
+	srv, _ := newTestServer(t, nil)
+	for _, q := range []string{"", "?from=2026-10-01", "?from=x&to=y"} {
+		rec := httptest.NewRecorder()
+		req := httptest.NewRequest("GET", "/api/v1/overview"+q, nil)
+		srv.Handler().ServeHTTP(rec, req)
+		if rec.Code != http.StatusBadRequest {
+			t.Fatalf("%q 期望 400，实际 %d", q, rec.Code)
+		}
 	}
 }
