@@ -8,7 +8,7 @@
 
 - **后端**：Go 1.27 单二进制，标准库 `net/http`，modernc.org/sqlite（纯 Go，无 CGO）
 - **前端**：SvelteKit 5 + Tailwind v4，SPA 模式（adapter-static），产物 `go:embed` 内嵌
-- **部署**：Docker 单容器，公共基镜的降权入口按 `PUID/PGID` 降权（su-exec），`/data` 卷持久化 SQLite
+- **部署**：Docker 单容器，公共基镜的降权入口按 `PUID/PGID` 降权（su-exec），`/app/data` 卷持久化 SQLite
 
 ## 快速开始
 
@@ -54,23 +54,24 @@ docker run -d --name guanfu \
   -p 8788:8788 \
   -e HUOZHI_BASE_URL=https://huozhi.example.com \
   -e HUOZHI_API_KEY=<key> \
-  -v guanfu-data:/data \
+  -v guanfu-data:/app/data \
   guanfu
 ```
 
-`/data` 是唯一持久化目录（SQLite，WAL 模式），已纳入既有备份体系（docker-db-auto-backup）。
-绑定挂载宿主目录（如 `-v ./data:/data`）时把 `PUID` / `PGID` 设成该目录属主 uid/gid，
-公共基镜的降权入口会自动 `chown /data` 再降权运行；不设置时默认 `1000:1000`。
+`/app/data` 是唯一持久化目录（SQLite，WAL 模式），已纳入既有备份体系（docker-db-auto-backup）。
+二进制在 `/app/guanfu`，而 `/app` 不在 `PATH` 上，所以 `docker exec` 里的命令要写绝对路径。
+绑定挂载宿主目录（如 `-v ./data:/app/data`）时把 `PUID` / `PGID` 设成该目录属主 uid/gid，
+公共基镜的降权入口会自动 `chown /app/data` 再降权运行；不设置时默认 `1000:1000`。
 
 导出由应用自身完成：`guanfu backup` 子命令用 `VACUUM INTO` 生成事务级一致快照
 （含 WAL 中已提交的数据），只写 stdout、不跑迁移，备份工具经 `docker exec` 直接采集。
 手工备份同一条命令：
 
 ```bash
-docker exec guanfu guanfu backup > guanfu-$(date +%F).db
+docker exec guanfu /app/guanfu backup > guanfu-$(date +%F).db
 ```
 
-恢复即把文件放回 `/data` 卷（修好属主）重启容器。
+恢复即把文件放回 `/app/data` 卷（修好属主）重启容器。
 
 ### 前端单独开发（热更新）
 
@@ -84,7 +85,7 @@ cd web && pnpm install && pnpm dev
 | 变量 | 默认 | 说明 |
 |---|---|---|
 | `GUANFU_LISTEN` | `:8788` | HTTP 监听地址 |
-| `GUANFU_DB` | `./data/guanfu.db` | SQLite 文件路径 |
+| `GUANFU_DB` | `./data/guanfu.db` | SQLite 文件路径（镜像内 `WORKDIR=/app` 且已显式设为 `/app/data/guanfu.db`，故落在数据卷上） |
 | `GUANFU_TZ` | `Asia/Shanghai` | 本地时区（local_date 归日） |
 | `GUANFU_STATIC_DIR` | `./web/dist` | 磁盘前端目录（存在则优先于内嵌） |
 | `GUANFU_SYNC_ENABLED` | `1` | 同步引擎总开关 |
@@ -241,7 +242,7 @@ guanfu mcp
 - 各源 key 均为全权凭证（huozhi/mujian/dawarich/immich 概莫如此），观复只发 GET 请求
 - 媒体代理做路径穿越防护（mujian key 字符集 + `..` 拒绝）与 SSRF 防护（bili 封面仅限 `*.hdslb.com` + https）
 - MCP 只有 5 个只读查询工具，且返回体刻意剥掉 `detail_json` 与媒体路径；要收紧就在 `GUANFU_MCP_TOKEN` 配一个值，或 `GUANFU_MCP_ENABLED=0` 整条关掉
-- SQLite 文件位于 `/data` 卷，纳入既有备份体系（docker-db-auto-backup）
+- SQLite 文件位于 `/app/data` 卷，纳入既有备份体系（docker-db-auto-backup）
 
 ## 开发
 

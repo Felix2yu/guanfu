@@ -9,22 +9,27 @@
 # 基镜 ghcr.io/felix2yu/base:alpine-3.24 提供 su-exec、ca-certificates、tzdata
 # 与 PUID/PGID 降权入口（观复的 local_date 归日基于本机时区，tzdata 不可缺）。
 #
-# 容器内布局：
-#   /usr/local/bin/guanfu   服务二进制（含内嵌前端）
-#   /data                   唯一数据卷：SQLite 数据库文件
+# 容器内布局（全 fleet 统一）：
+#   /app/guanfu    服务二进制（含内嵌前端）。WORKDIR 即 /app，所以 Go 里
+#                  `./data/guanfu.db` 的默认路径正好落在 /app/data 卷上。
+#   /app/data      唯一数据卷：SQLite 数据库文件
+# /app 不在 PATH 上，因此外部备份工具的 BACKUP_SQLITE_CMD 必须写绝对路径
+# `/app/guanfu backup`，裸名在 docker exec 里会 command not found。
 
 FROM ghcr.io/felix2yu/base:alpine-3.24
 
-COPY --chmod=755 bin/guanfu /usr/local/bin/guanfu
+WORKDIR /app
+
+COPY --chmod=755 bin/guanfu /app/guanfu
 
 ENV GUANFU_LISTEN=:8788 \
-    GUANFU_DB=/data/guanfu.db \
+    GUANFU_DB=/app/data/guanfu.db \
     GUANFU_TZ=Asia/Shanghai \
     GUANFU_STATIC_DIR= \
-    APP_DATA_DIR=/data
+    APP_DATA_DIR=/app/data
 
-RUN mkdir -p /data
-VOLUME ["/data"]
+RUN mkdir -p /app/data
+VOLUME ["/app/data"]
 
 EXPOSE 8788
 
@@ -32,4 +37,4 @@ EXPOSE 8788
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget -q -O- http://127.0.0.1:8788/api/v1/health >/dev/null || exit 1
 
-CMD ["guanfu"]
+CMD ["/app/guanfu"]

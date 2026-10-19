@@ -9,9 +9,9 @@
 # 多架构 manifest，服务器是什么架构都拉同一个 tag。
 #
 # 数据放在具名卷里而不是绑定挂载：具名卷由 Docker 按容器内用户归属初始化，天然无权限问题。
-# 若确实想绑定挂载到宿主目录（如 ./data:/data），无需手动 chown —— 把下方 environment
-# 里的 PUID / PGID 设成宿主目录的属主 uid/gid，基镜的降权入口会自动 chown /data 并以该身份
-# 运行，从而让 SQLite（WAL 模式，需对 /data 可写）正常写入。不设置时默认 1000:1000。
+# 若确实想绑定挂载到宿主目录（如 ./data:/app/data），无需手动 chown —— 把下方 environment
+# 里的 PUID / PGID 设成宿主目录的属主 uid/gid，基镜的降权入口会自动 chown /app/data 并以该身份
+# 运行，从而让 SQLite（WAL 模式，需对 /app/data 可写）正常写入。不设置时默认 1000:1000。
 
 services:
   guanfu:
@@ -31,22 +31,23 @@ services:
     environment:
       # 时区直接决定「哪一天」的归属（local_date 归日），务必与使用者一致
       TZ: ${TZ:-Asia/Shanghai}
-      GUANFU_DB: /data/guanfu.db
+      GUANFU_DB: /app/data/guanfu.db
       GUANFU_TZ: ${TZ:-Asia/Shanghai}
       # 运行身份：绑定挂载到宿主目录时设成宿主目录属主 uid/gid，入口脚本会自动
-      # chown /data，避免 SQLite 报 error 14: unable to open database file。
+      # chown /app/data，避免 SQLite 报 error 14: unable to open database file。
       # 用 `id <你的用户>` 查宿主属主；不设则默认 1000:1000。
       # PUID: ${PUID:-1000}
       # PGID: ${PGID:-1000}
       # 同步引擎总开关（0 = 只提供已有数据的查询）
       GUANFU_SYNC_ENABLED: ${GUANFU_SYNC_ENABLED:-1}
       # 外部备份工具（docker-db-auto-backup）经 docker exec 触发的自导出命令：
-      # `guanfu backup` 把 VACUUM INTO 的 SQLite 一致性快照写到 stdout。
+      # `/app/guanfu backup` 把 VACUUM INTO 的 SQLite 一致性快照写到 stdout。
+      # 二进制在 /app/guanfu，而 /app 不在 PATH 上，所以命令必须写绝对路径。
       # 导出身份自动沿用基镜烘入的 PUID/PGID（与数据属主一致），无需 BACKUP_SQLITE_USER。
-      BACKUP_SQLITE_CMD: "guanfu backup"
+      BACKUP_SQLITE_CMD: "/app/guanfu backup"
 
     volumes:
-      - guanfu-data:/data
+      - guanfu-data:/app/data
 
 volumes:
   guanfu-data:
