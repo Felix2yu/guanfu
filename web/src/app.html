@@ -6,7 +6,7 @@
     <title>观复 · 每日数据聚合</title>
     <meta name="color-scheme" content="light dark" />
     <script>
-      // 首屏前定色：等 Svelte 挂载再切会白闪一下（深色模式下尤其明显）。
+      // 首屏前落主题与字号：等 Svelte 挂载再切会白闪/字号跳一下。
       (() => {
         try {
           const t = localStorage.getItem('guanfu.theme') || 'system';
@@ -14,6 +14,11 @@
             t === 'dark' ||
             (t === 'system' && window.matchMedia('(prefers-color-scheme: dark)').matches);
           document.documentElement.classList.toggle('dark', dark);
+
+          const s = localStorage.getItem('guanfu.textSize');
+          if (s === 'small' || s === 'normal' || s === 'large' || s === 'xlarge') {
+            document.documentElement.dataset.textSize = s;
+          }
         } catch {}
       })();
     </script>

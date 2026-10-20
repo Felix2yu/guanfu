@@ -142,21 +142,19 @@
 </script>
 
 {#if n === 0}
-  <div class="flex h-[214px] items-center justify-center text-[12px] text-ink-3">
-    该区间没有数据
-  </div>
+  <div class="flex h-[214px] items-center justify-center fs-12 text-ink-3">该区间没有数据</div>
 {:else if n <= 2}
   <div class="flex h-[214px] flex-col justify-center gap-5 px-1">
     {#each bars as b (b.label)}
       <div class="flex items-center gap-3">
-        <span class="w-8 shrink-0 text-[11px] text-ink-3">{b.label}</span>
+        <span class="w-8 shrink-0 fs-11 text-ink-3">{b.label}</span>
         <div class="h-2 min-w-0 flex-1 overflow-hidden rounded-full bg-chip">
           <div class="h-full rounded-full" style:width="{b.pct}%" style:background={b.color}></div>
         </div>
-        <span class="tnum w-24 shrink-0 text-right text-[12px] text-ink">{fmtMoney(b.value)}</span>
+        <span class="tnum w-24 shrink-0 text-right fs-12 text-ink">{fmtMoney(b.value)}</span>
       </div>
     {/each}
-    <p class="text-[11px] text-ink-3">
+    <p class="fs-11 text-ink-3">
       区间只有一个自然日，趋势图退化为当日收支对比；切换到「近 30 天」可看曲线。
     </p>
   </div>
@@ -165,11 +163,11 @@
     {#if w > 0}
       <svg width={w} height={H} role="img" aria-label="收支趋势图">
         <!-- 收入面板 -->
-        <text x={PAD_L} y={incomePanel.top + 9} font-size="10" fill="var(--gf-ink-3)">收入</text>
+        <text x={PAD_L} y={incomePanel.top + 9} class="fs-10" fill="var(--gf-ink-3)">收入</text>
         {#each [0, 0.5, 1] as t (t)}
           {@const y = yAt(incomePanel.max * t, incomePanel.max, incomePanel.top)}
           <line x1={PAD_L} y1={y} x2={w - PAD_R} y2={y} stroke="var(--gf-line)" stroke-width="1" />
-          <text x={PAD_L - 8} y={y + 3.5} text-anchor="end" font-size="9.5" fill="var(--gf-ink-3)">
+          <text x={PAD_L - 8} y={y + 3.5} text-anchor="end" class="fs-95" fill="var(--gf-ink-3)">
             {fmtMoneyCompact(incomePanel.max * t)}
           </text>
         {/each}
@@ -188,18 +186,18 @@
           x={w - PAD_R}
           y={incomePanel.top + 9}
           text-anchor="end"
-          font-size="9.5"
+          class="fs-95"
           fill="var(--gf-ink-3)"
         >
           峰值 {fmtMoneyCompact(maxIncome)}
         </text>
 
         <!-- 支出面板 -->
-        <text x={PAD_L} y={expensePanel.top + 9} font-size="10" fill="var(--gf-ink-3)">支出</text>
+        <text x={PAD_L} y={expensePanel.top + 9} class="fs-10" fill="var(--gf-ink-3)">支出</text>
         {#each [0, 0.5, 1] as t (t)}
           {@const y = yAt(expensePanel.max * t, expensePanel.max, expensePanel.top)}
           <line x1={PAD_L} y1={y} x2={w - PAD_R} y2={y} stroke="var(--gf-line)" stroke-width="1" />
-          <text x={PAD_L - 8} y={y + 3.5} text-anchor="end" font-size="9.5" fill="var(--gf-ink-3)">
+          <text x={PAD_L - 8} y={y + 3.5} text-anchor="end" class="fs-95" fill="var(--gf-ink-3)">
             {fmtMoneyCompact(expensePanel.max * t)}
           </text>
         {/each}
@@ -218,7 +216,7 @@
           x={w - PAD_R}
           y={expensePanel.top + 9}
           text-anchor="end"
-          font-size="9.5"
+          class="fs-95"
           fill="var(--gf-ink-3)"
         >
           峰值 {fmtMoneyCompact(maxExpense)}
@@ -226,12 +224,8 @@
 
         <!-- X 轴刻度 -->
         {#each xTicks as tick (tick.x + tick.label)}
-          <text
-            x={tick.x}
-            y={H - 4}
-            text-anchor={tick.anchor}
-            font-size="9.5"
-            fill="var(--gf-ink-3)">{tick.label}</text
+          <text x={tick.x} y={H - 4} text-anchor={tick.anchor} class="fs-95" fill="var(--gf-ink-3)"
+            >{tick.label}</text
           >
         {/each}
       </svg>

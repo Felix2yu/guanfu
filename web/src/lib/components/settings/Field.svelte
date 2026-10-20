@@ -17,7 +17,7 @@
 </script>
 
 <label class="block min-w-0 {className}">
-  <span class="mb-1 flex flex-wrap items-baseline gap-x-1.5 text-[11px] leading-tight">
+  <span class="mb-1 flex flex-wrap items-baseline gap-x-1.5 fs-11 leading-tight">
     <span class="font-medium text-ink-2">{label}</span>
     {#if hint}<span class="text-ink-3">{hint}</span>{/if}
   </span>

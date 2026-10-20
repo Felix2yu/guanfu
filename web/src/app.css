@@ -10,6 +10,10 @@
 :root {
   color-scheme: light;
 
+  /* 字号缩放因子：设置页「字号」改的是它，所有 fs-* 工具类乘这个系数。
+     只缩放文字，间距、圆角、图标尺寸保持原样，布局不会跟着抖。 */
+  --gf-text-scale: 1;
+
   --gf-canvas: #f5f5f3;
   --gf-surface: #ffffff;
   --gf-surface-2: #fbfbf8;
@@ -36,6 +40,18 @@
   --src-9: #5b7a99;
   --src-10: #8fa1b3;
   --src-11: #6f8c7a;
+}
+
+/* 设置页的四档字号。用 data 属性而不是内联样式：app.html 的首屏脚本
+   能在样式生效前先落属性，避免刷新时字号闪一下。 */
+:root[data-text-size='small'] {
+  --gf-text-scale: 0.9;
+}
+:root[data-text-size='large'] {
+  --gf-text-scale: 1.15;
+}
+:root[data-text-size='xlarge'] {
+  --gf-text-scale: 1.3;
 }
 
 :root.dark {
@@ -96,8 +112,54 @@ body {
   font-family:
     -apple-system, BlinkMacSystemFont, 'SF Pro Text', 'PingFang SC', 'Helvetica Neue',
     'Microsoft YaHei', sans-serif;
-  font-size: 14px;
+  font-size: calc(14px * var(--gf-text-scale));
   line-height: 1.5;
+}
+
+/* ---- 字号档位 ----
+   页面里不再写死 px 字号，统一走 fs-*：
+   改档位时整站文字一起缩放，行高用无单位倍数，会跟着字号走。 */
+@utility fs-9 {
+  font-size: calc(9px * var(--gf-text-scale));
+}
+@utility fs-95 {
+  font-size: calc(9.5px * var(--gf-text-scale));
+}
+@utility fs-10 {
+  font-size: calc(10px * var(--gf-text-scale));
+}
+@utility fs-11 {
+  font-size: calc(11px * var(--gf-text-scale));
+}
+@utility fs-115 {
+  font-size: calc(11.5px * var(--gf-text-scale));
+}
+@utility fs-12 {
+  font-size: calc(12px * var(--gf-text-scale));
+}
+@utility fs-125 {
+  font-size: calc(12.5px * var(--gf-text-scale));
+}
+@utility fs-13 {
+  font-size: calc(13px * var(--gf-text-scale));
+}
+@utility fs-14 {
+  font-size: calc(14px * var(--gf-text-scale));
+}
+@utility fs-15 {
+  font-size: calc(15px * var(--gf-text-scale));
+}
+@utility fs-19 {
+  font-size: calc(19px * var(--gf-text-scale));
+}
+@utility fs-20 {
+  font-size: calc(20px * var(--gf-text-scale));
+}
+@utility fs-24 {
+  font-size: calc(24px * var(--gf-text-scale));
+}
+@utility fs-26 {
+  font-size: calc(26px * var(--gf-text-scale));
 }
 
 /* 数字统一用等宽字形：卡片之间、行之间才能纵向对齐比较。 */
@@ -140,7 +202,7 @@ body {
   border: 1px solid var(--gf-line);
   background: var(--gf-surface);
   padding: 6px 9px;
-  font-size: 12.5px;
+  font-size: calc(12.5px * var(--gf-text-scale));
   line-height: 1.45;
   color: var(--gf-ink);
   outline: none;
@@ -165,7 +227,7 @@ body {
   border: 1px solid var(--gf-line);
   background: var(--gf-surface);
   padding: 5px 10px;
-  font-size: 12px;
+  font-size: calc(12px * var(--gf-text-scale));
   font-weight: 500;
   color: var(--gf-ink);
   white-space: nowrap;
@@ -198,7 +260,7 @@ body {
   justify-content: center;
   border-radius: 6px;
   padding: 4px 6px;
-  font-size: 11.5px;
+  font-size: calc(11.5px * var(--gf-text-scale));
   font-weight: 500;
   color: var(--gf-ink-2);
   transition: background-color 120ms;
@@ -227,7 +289,7 @@ body {
   gap: 4px;
   border-radius: 999px;
   padding: 1px 6px;
-  font-size: 10.5px;
+  font-size: calc(10.5px * var(--gf-text-scale));
   line-height: 1.5;
   background: var(--gf-chip);
   color: var(--gf-ink-2);

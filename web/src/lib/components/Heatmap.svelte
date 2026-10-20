@@ -51,7 +51,7 @@
         ? 'opacity-35'
         : '';
     const ring = isSelected ? 'ring-2 ring-ink ring-offset-2 ring-offset-surface' : '';
-    return `flex aspect-square w-full items-center justify-center rounded-md text-[11px] tabular-nums transition-colors ${dim} ${ring}`;
+    return `flex aspect-square w-full items-center justify-center rounded-md fs-11 tabular-nums transition-colors ${dim} ${ring}`;
   }
 
   function onclick(date: string | null) {
@@ -76,7 +76,7 @@
     >
       <Icon name="chevron-left" size={14} />
     </button>
-    <h2 class="tnum text-[14px] font-semibold">{monthTitle}</h2>
+    <h2 class="tnum fs-14 font-semibold">{monthTitle}</h2>
     <button
       type="button"
       class="flex h-7 w-7 items-center justify-center rounded-md border border-line text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
@@ -85,8 +85,8 @@
     >
       <Icon name="chevron-right" size={14} />
     </button>
-    <span class="tnum ml-1 text-[11px] text-ink-3">{total} 条</span>
-    <span class="ml-auto flex items-center gap-1.5 text-[10px] text-ink-3">
+    <span class="tnum ml-1 fs-11 text-ink-3">{total} 条</span>
+    <span class="ml-auto flex items-center gap-1.5 fs-10 text-ink-3">
       少
       {#each [0, maxCount * 0.2, maxCount * 0.6, maxCount] as lv (lv)}
         <span class="h-2.5 w-2.5 rounded-[3px]" style:background={levelStyle(lv).background}></span>
@@ -96,7 +96,7 @@
   </div>
   <div class="grid grid-cols-7 gap-1.5">
     {#each ['一', '二', '三', '四', '五', '六', '日'] as w (w)}
-      <div class="pb-1 text-center text-[10px] text-ink-3">{w}</div>
+      <div class="pb-1 text-center fs-10 text-ink-3">{w}</div>
     {/each}
     {#each cells as cell, i (i)}
       <button

@@ -214,7 +214,7 @@
     <Icon name="search" size={15} cls="shrink-0 text-ink-3" />
     <input
       type="search"
-      class="min-w-0 flex-1 bg-transparent text-[12.5px] text-ink outline-none placeholder:text-ink-3"
+      class="min-w-0 flex-1 bg-transparent fs-125 text-ink outline-none placeholder:text-ink-3"
       placeholder="搜索打卡或通知"
       bind:value={query}
       aria-label="搜索打卡或通知"
@@ -223,7 +223,7 @@
 
   <button
     type="button"
-    class="flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
+    class="flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] border border-line bg-surface px-2.5 fs-125 text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
     onclick={() => onSync('all')}
     disabled={syncing !== ''}
   >
@@ -235,7 +235,7 @@
     <!-- 下载链接指向 Go 后端的 /api 接口，不是 Kit 路由 -->
     <!-- eslint-disable svelte/no-navigation-without-resolve -->
     <a
-      class="flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] bg-accent px-2.5 text-[12.5px] font-medium text-accent-ink transition-opacity hover:opacity-90"
+      class="flex h-9 shrink-0 items-center gap-1.5 rounded-[9px] bg-accent px-2.5 fs-125 font-medium text-accent-ink transition-opacity hover:opacity-90"
       href="/api/v1/export?from={range.from}&to={range.to}"
       download
       title="导出 {range.from} ~ {range.to} 的全部事件（JSON）"
@@ -249,18 +249,18 @@
 
 <div class="px-4 py-5 md:px-6 lg:px-8">
   {#if error}
-    <div class="mb-3 rounded-lg bg-chip px-3 py-2 text-[12.5px] text-neg">{error}</div>
+    <div class="mb-3 rounded-lg bg-chip px-3 py-2 fs-125 text-neg">{error}</div>
   {/if}
 
   <!-- 问候 + 时间范围 -->
   <div class="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
     <div class="min-w-0">
-      <h1 class="text-[24px] leading-tight font-semibold tracking-[-0.01em]">{greeting}</h1>
-      <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 text-[12.5px] text-ink-2">
+      <h1 class="fs-24 leading-tight font-semibold tracking-[-0.01em]">{greeting}</h1>
+      <p class="mt-1 flex flex-wrap items-center gap-x-2 gap-y-1 fs-125 text-ink-2">
         <span>{date} 周{fmtWeekday(date)}</span>
         <span class="text-line-strong">·</span>
         <span>{RANGE_LABELS[mode]}个人数据概览</span>
-        <span class="tnum rounded-md bg-chip px-1.5 py-0.5 text-[11px] text-ink-2">
+        <span class="tnum rounded-md bg-chip px-1.5 py-0.5 fs-11 text-ink-2">
           {range.from} ~ {range.to} · {days} 天
         </span>
       </p>
@@ -270,7 +270,7 @@
       {#each MODES as m (m)}
         <button
           type="button"
-          class="rounded-[7px] px-2.5 py-1.5 text-[12.5px] transition-colors
+          class="rounded-[7px] px-2.5 py-1.5 fs-125 transition-colors
             {mode === m
             ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
             : 'text-ink-2 hover:text-ink'}"
@@ -321,8 +321,8 @@
   <div class="mt-3 grid gap-3 lg:grid-cols-[minmax(0,1.7fr)_minmax(0,1fr)]">
     <section class="flex flex-col rounded-xl border border-line bg-surface p-4">
       <div class="mb-2 flex flex-wrap items-center gap-x-4 gap-y-2">
-        <h2 class="text-[14px] font-semibold">收支趋势 · {RANGE_LABELS[mode]}</h2>
-        <div class="ml-auto flex items-center gap-3 text-[11px] text-ink-2">
+        <h2 class="fs-14 font-semibold">收支趋势 · {RANGE_LABELS[mode]}</h2>
+        <div class="ml-auto flex items-center gap-3 fs-11 text-ink-2">
           <span class="flex items-center gap-1.5">
             <span class="h-1.5 w-1.5 rounded-full" style:background="var(--gf-pos)"></span>收入
           </span>
@@ -333,7 +333,7 @@
       </div>
       <TrendChart days={filledDays} {currency} />
       {#if filledDays.length > 2}
-        <p class="mt-1 text-[11px] text-ink-3">
+        <p class="mt-1 fs-11 text-ink-3">
           两条曲线各自独立量程：收入与支出量级通常差一个数量级，同轴会把支出压平。
         </p>
       {/if}
@@ -341,14 +341,14 @@
 
     <section class="flex flex-col rounded-xl border border-line bg-surface p-4">
       <div class="mb-3 flex flex-wrap items-baseline gap-2">
-        <h2 class="text-[14px] font-semibold">数据源分布</h2>
-        <span class="text-[11px] text-ink-3"
+        <h2 class="fs-14 font-semibold">数据源分布</h2>
+        <span class="fs-11 text-ink-3"
           >{RANGE_LABELS[mode]} · 共 {fmtCount(data?.total_count ?? 0)} 条</span
         >
       </div>
 
       {#if donutItems.length === 0}
-        <div class="flex flex-1 items-center justify-center py-8 text-[12px] text-ink-3">
+        <div class="flex flex-1 items-center justify-center py-8 fs-12 text-ink-3">
           该区间没有事件
         </div>
       {:else}
@@ -356,20 +356,20 @@
           <DonutChart items={donutItems} total={data?.total_count ?? 0} />
           <ul class="min-w-[160px] flex-1 space-y-1.5">
             {#each data?.sources ?? [] as s (s.key)}
-              <li class="flex items-center gap-2 text-[12px]">
+              <li class="flex items-center gap-2 fs-12">
                 <span
                   class="h-1.5 w-1.5 shrink-0 rounded-full"
                   style:background={SOURCE_COLOR[s.key] ?? 'var(--gf-ink-3)'}
                 ></span>
                 <span class="min-w-0 flex-1 truncate text-ink-2">{sourceLabel(s.key)}</span>
-                <span class="tnum shrink-0 text-[11px] text-ink-3">{fmtCount(s.count)}</span>
+                <span class="tnum shrink-0 fs-11 text-ink-3">{fmtCount(s.count)}</span>
               </li>
             {/each}
           </ul>
         </div>
       {/if}
 
-      <p class="mt-auto pt-3 text-[11px] text-ink-3">
+      <p class="mt-auto pt-3 fs-11 text-ink-3">
         {configured.length} 个来源已配置{#if missing > 0}
           · {missing} 个未配置{/if}
       </p>
@@ -397,11 +397,11 @@
   </div>
 
   {#if q}
-    <p class="mt-3 text-[11px] text-ink-3">
+    <p class="mt-3 fs-11 text-ink-3">
       搜索「{query.trim()}」命中：打卡 {shownHabits.length}/{habits.length} 项，通知 {shownNotices.length}/{notices.length}
       条。指标与图表是聚合值，不受关键字过滤。
     </p>
   {:else if unread > 0}
-    <p class="mt-3 text-[11px] text-ink-3">{unread} 条未读通知，点任意一条即可标记已读。</p>
+    <p class="mt-3 fs-11 text-ink-3">{unread} 条未读通知，点任意一条即可标记已读。</p>
   {/if}
 </div>

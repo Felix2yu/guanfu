@@ -50,7 +50,7 @@
     </g>
   </svg>
   <div class="pointer-events-none absolute inset-0 flex flex-col items-center justify-center">
-    <span class="tnum text-[19px] leading-none font-semibold">{fmtCount(total)}</span>
-    <span class="mt-1 text-[10px] text-ink-3">{unit}</span>
+    <span class="tnum fs-19 leading-none font-semibold">{fmtCount(total)}</span>
+    <span class="mt-1 fs-10 text-ink-3">{unit}</span>
   </div>
 </div>

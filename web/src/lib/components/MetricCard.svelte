@@ -32,23 +32,23 @@
   class="flex flex-col gap-2.5 rounded-xl border border-line bg-surface p-4 transition-colors hover:border-line-strong"
 >
   <div class="flex items-center justify-between gap-2">
-    <span class="truncate text-[12px] text-ink-2">{label}</span>
+    <span class="truncate fs-12 text-ink-2">{label}</span>
     {#if dot}
       <span class="h-1.5 w-1.5 shrink-0 rounded-full" style:background={dot}></span>
     {/if}
   </div>
 
   <div class="flex items-baseline gap-1">
-    <span class="tnum text-[26px] leading-none font-semibold tracking-[-0.01em]">{value}</span>
-    {#if unit}<span class="text-[12px] text-ink-3">{unit}</span>{/if}
+    <span class="tnum fs-26 leading-none font-semibold tracking-[-0.01em]">{value}</span>
+    {#if unit}<span class="fs-12 text-ink-3">{unit}</span>{/if}
   </div>
 
   {#if delta}
-    <div class="flex items-center gap-1 text-[12px] {toneClass}">
+    <div class="flex items-center gap-1 fs-12 {toneClass}">
       <Icon name={dir} size={12} />
       <span class="truncate">{delta}</span>
     </div>
   {:else if hint}
-    <div class="truncate text-[12px] text-ink-3">{hint}</div>
+    <div class="truncate fs-12 text-ink-3">{hint}</div>
   {/if}
 </div>

@@ -22,14 +22,13 @@
 
 <div class="flex flex-col rounded-xl border border-line bg-surface">
   <div class="flex items-center gap-2 border-b border-line px-4 py-3">
-    <h2 class="text-[14px] font-semibold">通知</h2>
+    <h2 class="fs-14 font-semibold">通知</h2>
     {#if unread > 0}
-      <span class="tnum rounded-md bg-chip px-1.5 py-0.5 text-[11px] text-ink-2">{unread} 未读</span
-      >
+      <span class="tnum rounded-md bg-chip px-1.5 py-0.5 fs-11 text-ink-2">{unread} 未读</span>
     {/if}
     <button
       type="button"
-      class="ml-auto rounded-md px-1.5 py-1 text-[11px] text-ink-3 transition-colors hover:text-ink disabled:opacity-40"
+      class="ml-auto rounded-md px-1.5 py-1 fs-11 text-ink-3 transition-colors hover:text-ink disabled:opacity-40"
       onclick={onReadAll}
       disabled={unread === 0}
     >
@@ -39,7 +38,7 @@
 
   <div class="flex flex-col p-1.5">
     {#if notices.length === 0}
-      <p class="px-2.5 py-6 text-center text-[12px] text-ink-3">{emptyText}</p>
+      <p class="px-2.5 py-6 text-center fs-12 text-ink-3">{emptyText}</p>
     {:else}
       {#each notices as n (n.id)}
         {@const isRead = read[n.id]}
@@ -61,7 +60,7 @@
           ></span>
           <span class="min-w-0 flex-1">
             <span
-              class="block text-[12.5px] leading-snug {isRead
+              class="block fs-125 leading-snug {isRead
                 ? 'text-ink-3'
                 : n.tone === 'error'
                   ? 'text-neg'
@@ -70,7 +69,7 @@
               {n.text}
             </span>
             {#if n.at}
-              <span class="mt-0.5 block text-[11px] text-ink-3">{fmtAgo(n.at)}</span>
+              <span class="mt-0.5 block fs-11 text-ink-3">{fmtAgo(n.at)}</span>
             {/if}
           </span>
         </button>
@@ -78,7 +77,5 @@
     {/if}
   </div>
 
-  <p class="border-t border-line px-4 py-2 text-[11px] text-ink-3">
-    由同步状态推导 · 已读只记在这台设备
-  </p>
+  <p class="border-t border-line px-4 py-2 fs-11 text-ink-3">由同步状态推导 · 已读只记在这台设备</p>
 </div>

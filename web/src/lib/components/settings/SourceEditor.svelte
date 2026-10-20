@@ -249,7 +249,7 @@
           step="5"
           bind:value={intervalMin}
         />
-        <span class="text-[11px] text-ink-3">分钟</span>
+        <span class="fs-11 text-ink-3">分钟</span>
       </div>
     </Field>
 
@@ -274,7 +274,7 @@
   </div>
 
   {#if endpoint.error}
-    <p class="mt-2 rounded-md bg-chip px-2 py-1.5 text-[11.5px] text-neg">
+    <p class="mt-2 rounded-md bg-chip px-2 py-1.5 fs-115 text-neg">
       现有配置有问题：{endpoint.error}
     </p>
   {/if}
@@ -328,14 +328,14 @@
   </div>
 
   {#if flash}
-    <p class="mt-2 text-[11.5px] text-pos">{flash}</p>
+    <p class="mt-2 fs-115 text-pos">{flash}</p>
   {/if}
   {#if error}
-    <p class="mt-2 text-[11.5px] text-neg">{error}</p>
+    <p class="mt-2 fs-115 text-neg">{error}</p>
   {/if}
   {#if probe}
     <!-- 结果卡片按内容宽度收缩：一句话结论横跨四列看着像块空条。 -->
-    <div class="mt-2 max-w-full rounded-md border border-line bg-surface px-2.5 py-2 text-[11.5px]">
+    <div class="mt-2 max-w-full rounded-md border border-line bg-surface px-2.5 py-2 fs-115">
       <p class="flex flex-wrap items-baseline gap-x-1.5">
         <span class="font-medium {probe.ok ? 'text-pos' : 'text-neg'}">
           {probe.ok ? '连通' : '不通'}

@@ -20,20 +20,20 @@
 
 <div class="flex flex-col rounded-xl border border-line bg-surface">
   <div class="flex items-center gap-2 border-b border-line px-4 py-3">
-    <h2 class="text-[14px] font-semibold">今日打卡</h2>
+    <h2 class="fs-14 font-semibold">今日打卡</h2>
     {#if habits.length > 0}
-      <span class="tnum rounded-md bg-chip px-1.5 py-0.5 text-[11px] text-ink-2">
+      <span class="tnum rounded-md bg-chip px-1.5 py-0.5 fs-11 text-ink-2">
         {habits.length} 项
       </span>
     {/if}
-    <span class="ml-auto text-[11px] text-ink-3">{date} 周{fmtWeekday(date)}</span>
+    <span class="ml-auto fs-11 text-ink-3">{date} 周{fmtWeekday(date)}</span>
   </div>
 
   <div class="flex flex-1 flex-col gap-1 p-1.5">
     {#if loading}
-      <p class="px-2.5 py-6 text-center text-[12px] text-ink-3">加载中…</p>
+      <p class="px-2.5 py-6 text-center fs-12 text-ink-3">加载中…</p>
     {:else if habits.length === 0}
-      <p class="px-2.5 py-6 text-center text-[12px] text-ink-3">{emptyText}</p>
+      <p class="px-2.5 py-6 text-center fs-12 text-ink-3">{emptyText}</p>
     {:else}
       {#each habits as h (h.name)}
         <div class="flex items-center gap-2.5 rounded-lg px-2.5 py-1.5">
@@ -42,14 +42,14 @@
           >
             <Icon name="check" size={12} />
           </span>
-          <span class="min-w-0 flex-1 truncate text-[12.5px]">{h.name}</span>
+          <span class="min-w-0 flex-1 truncate fs-125">{h.name}</span>
           {#if h.count > 1}
-            <span class="tnum shrink-0 text-[11px] text-ink-3">×{h.count}</span>
+            <span class="tnum shrink-0 fs-11 text-ink-3">×{h.count}</span>
           {/if}
         </div>
       {/each}
     {/if}
   </div>
 
-  <p class="border-t border-line px-4 py-2 text-[11px] text-ink-3">来自慎始 · 观复只读展示</p>
+  <p class="border-t border-line px-4 py-2 fs-11 text-ink-3">来自慎始 · 观复只读展示</p>
 </div>

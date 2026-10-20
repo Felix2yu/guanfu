@@ -187,7 +187,7 @@
     {#if ui.view === 'calendar'}
       <button
         type="button"
-        class="flex h-9 items-center gap-1.5 rounded-[9px] border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
+        class="flex h-9 items-center gap-1.5 rounded-[9px] border border-line bg-surface px-2.5 fs-125 text-ink-2 transition-colors hover:border-line-strong hover:text-ink disabled:opacity-50"
         onclick={() => sync('all')}
         disabled={syncing !== ''}
       >
@@ -197,7 +197,7 @@
       {#if range.min}
         <!-- eslint-disable svelte/no-navigation-without-resolve -->
         <a
-          class="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-2.5 text-[12.5px] font-medium text-accent-ink transition-opacity hover:opacity-90"
+          class="flex h-9 items-center gap-1.5 rounded-[9px] bg-accent px-2.5 fs-125 font-medium text-accent-ink transition-opacity hover:opacity-90"
           href="/api/v1/export?from={range.min}&to={range.max}"
           download
           title="导出 {range.min} ~ {range.max} 的全部事件（JSON）"
@@ -219,7 +219,7 @@
         </button>
         <input
           type="date"
-          class="tnum h-9 rounded-[9px] border border-line bg-surface px-2 text-[12.5px] text-ink"
+          class="tnum h-9 rounded-[9px] border border-line bg-surface px-2 fs-125 text-ink"
           value={date}
           onchange={onDateInput}
           min={range.min || undefined}
@@ -237,7 +237,7 @@
         {#if date !== todayStr()}
           <button
             type="button"
-            class="h-9 rounded-[9px] border border-line bg-surface px-2.5 text-[12.5px] text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+            class="h-9 rounded-[9px] border border-line bg-surface px-2.5 fs-125 text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
             onclick={() => goto(todayStr())}>今天</button
           >
         {/if}
@@ -251,16 +251,16 @@
       : 'max-w-[1080px]'}"
   >
     {#if error}
-      <div class="mb-3 rounded-lg bg-chip px-3 py-2 text-[12.5px] text-neg">{error}</div>
+      <div class="mb-3 rounded-lg bg-chip px-3 py-2 fs-125 text-neg">{error}</div>
     {/if}
 
     <!-- 当日汇总：只有「当日」视图需要；日历是月视图、时间线是区间，
          头顶挂单日收支只会让人以为那是整个窗口的合计 -->
     {#if ui.view === 'day'}
       <div class="mb-3 flex flex-wrap items-baseline gap-x-3 gap-y-1">
-        <h1 class="tnum text-[20px] font-semibold tracking-[-0.01em]">{date}</h1>
-        <span class="text-[13px] text-ink-2">周{fmtWeekday(date)}</span>
-        <span class="tnum ml-auto flex items-baseline gap-3 text-[13px]">
+        <h1 class="tnum fs-20 font-semibold tracking-[-0.01em]">{date}</h1>
+        <span class="fs-13 text-ink-2">周{fmtWeekday(date)}</span>
+        <span class="tnum ml-auto flex items-baseline gap-3 fs-13">
           {#if incomeTotal > 0}<span class="text-pos">+{fmtMoney(incomeTotal)}</span>{/if}
           {#if expenseTotal > 0}<span class="text-neg">−{fmtMoney(expenseTotal)}</span>{/if}
           <span class="text-ink-3">{events.length} 条</span>
@@ -272,7 +272,7 @@
          手机放不下这一排，退化成「N 个源 · M 个异常」摘要，逐个同步在总览的状态卡里做。
          日历视图同理，同步/导出入口在顶栏。 -->
     {#if enabledSources.length > 0 && ui.view !== 'calendar'}
-      <div class="mb-3 flex items-center gap-2 text-[11px] text-ink-3">
+      <div class="mb-3 flex items-center gap-2 fs-11 text-ink-3">
         <div
           class="no-scrollbar hidden min-w-0 flex-1 items-center gap-1.5 overflow-x-auto md:flex"
         >
@@ -340,10 +340,10 @@
         }}
         onShift={(delta: number) => (heatMonth = shiftMonth(heatMonth, delta))}
       />
-      <p class="mt-2 text-[11px] text-ink-3">点任意一天进入当日视图；颜色深浅按当天事件条数。</p>
+      <p class="mt-2 fs-11 text-ink-3">点任意一天进入当日视图；颜色深浅按当天事件条数。</p>
     {:else if ui.view === 'timeline'}
       <!-- 时间线视图：跨日连续流，日子倒序、日内时刻正序 -->
-      <div class="mb-3 flex items-center gap-2 text-[11px] text-ink-3">
+      <div class="mb-3 flex items-center gap-2 fs-11 text-ink-3">
         <span class="tnum">{tlFrom} ~ {date}（{tlDays} 天）</span>
         {#if tlLoading}<span>加载中…</span>{/if}
         <button
@@ -356,12 +356,12 @@
         </button>
       </div>
       {#if tlTruncated}
-        <div class="mb-3 rounded-lg bg-chip px-3 py-2 text-[11px] text-neg">
+        <div class="mb-3 rounded-lg bg-chip px-3 py-2 fs-11 text-neg">
           这个窗口内的事件超过 1000 条上限，列表可能不完整——请改用日历逐日查看。
         </div>
       {/if}
       {#if !tlLoading && tlGroups.length === 0}
-        <div class="py-16 text-center text-[12.5px] text-ink-3">
+        <div class="py-16 text-center fs-125 text-ink-3">
           这段时间没有数据。{#if range.min}<span class="mt-1 block"
               >数据范围 {range.min} ~ {range.max}</span
             >{/if}
@@ -371,9 +371,9 @@
           {#each tlGroups as g (g.day)}
             <section>
               <div class="mb-1 flex items-baseline gap-2 border-b border-line pb-1.5">
-                <h2 class="tnum text-[13px] font-medium">{g.day} 周{fmtWeekday(g.day)}</h2>
-                <span class="tnum text-[11px] text-ink-3">{g.list.length} 条</span>
-                <span class="tnum ml-auto flex gap-2 text-[11px]">
+                <h2 class="tnum fs-13 font-medium">{g.day} 周{fmtWeekday(g.day)}</h2>
+                <span class="tnum fs-11 text-ink-3">{g.list.length} 条</span>
+                <span class="tnum ml-auto flex gap-2 fs-11">
                   {#if g.income > 0}<span class="text-pos">+{fmtMoney(g.income)}</span>{/if}
                   {#if g.expense > 0}<span class="text-neg">−{fmtMoney(g.expense)}</span>{/if}
                 </span>
@@ -391,9 +391,9 @@
     {:else}
       <!-- 当日视图：这一天的时间轴 -->
       {#if loading}
-        <div class="py-16 text-center text-[12.5px] text-ink-3">加载中…</div>
+        <div class="py-16 text-center fs-125 text-ink-3">加载中…</div>
       {:else if sorted.length === 0}
-        <div class="py-16 text-center text-[12.5px] text-ink-3">
+        <div class="py-16 text-center fs-125 text-ink-3">
           这一天还没有数据。
           {#if range.min}<span class="mt-1 block">数据范围 {range.min} ~ {range.max}</span>{/if}
         </div>

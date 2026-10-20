@@ -9,7 +9,7 @@
 <header
   class="sticky top-0 z-20 flex flex-wrap items-center gap-x-3 gap-y-2 border-b border-line bg-canvas/90 px-4 py-2.5 backdrop-blur md:px-6 lg:px-8"
 >
-  <div class="flex shrink-0 items-center gap-1.5 text-[13px]">
+  <div class="flex shrink-0 items-center gap-1.5 fs-13">
     <span class="text-ink-3">观复</span>
     <span class="text-line-strong">/</span>
     <span class="font-medium text-ink">{current}</span>

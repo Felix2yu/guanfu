@@ -41,7 +41,7 @@
             <circle cx="10" cy="10" r="1.9" fill="currentColor" />
           </svg>
         </span>
-        <span class="hidden text-[15px] font-semibold tracking-[0.02em] lg:inline">观复</span>
+        <span class="hidden fs-15 font-semibold tracking-[0.02em] lg:inline">观复</span>
       </div>
 
       <nav class="flex flex-col gap-1 px-3" aria-label="主导航">
@@ -49,7 +49,7 @@
           {@const active = !onSettings && ui.view === v}
           <button
             type="button"
-            class="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] transition-colors
+            class="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 fs-13 transition-colors
               {active
               ? 'bg-accent font-medium text-accent-ink'
               : 'text-ink-2 hover:bg-chip hover:text-ink'}"
@@ -66,7 +66,7 @@
       <div class="mt-auto flex flex-col gap-2 px-3 pb-4">
         <a
           href={resolve('/settings')}
-          class="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 text-[13px] transition-colors
+          class="flex items-center gap-2.5 rounded-[10px] px-2.5 py-2 fs-13 transition-colors
             {onSettings
             ? 'bg-accent font-medium text-accent-ink'
             : 'text-ink-2 hover:bg-chip hover:text-ink'}"
@@ -76,9 +76,7 @@
           <span class="flex w-5 shrink-0 justify-center"><Icon name="settings" size={20} /></span>
           <span class="hidden truncate lg:inline">设置</span>
         </a>
-        <p class="hidden px-2.5 text-[11px] leading-relaxed text-ink-3 lg:block">
-          自托管 · 数据留在本机
-        </p>
+        <p class="hidden px-2.5 fs-11 leading-relaxed text-ink-3 lg:block">自托管 · 数据留在本机</p>
       </div>
     </aside>
 
@@ -96,7 +94,7 @@
       {@const active = !onSettings && ui.view === v}
       <button
         type="button"
-        class="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px]
+        class="flex flex-1 flex-col items-center gap-0.5 py-2 fs-10
           {active ? 'font-medium text-ink' : 'text-ink-3'}"
         onclick={() => go(v)}
         aria-current={active ? 'page' : undefined}
@@ -107,7 +105,7 @@
     {/each}
     <a
       href={resolve('/settings')}
-      class="flex flex-1 flex-col items-center gap-0.5 py-2 text-[10px]
+      class="flex flex-1 flex-col items-center gap-0.5 py-2 fs-10
         {onSettings ? 'font-medium text-ink' : 'text-ink-3'}"
       aria-current={onSettings ? 'page' : undefined}
     >

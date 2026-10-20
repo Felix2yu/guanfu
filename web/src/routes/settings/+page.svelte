@@ -18,7 +18,15 @@
   import TopBar from '#lib/components/TopBar.svelte';
   import NotifyEditor from '#lib/components/settings/NotifyEditor.svelte';
   import SourceEditor from '#lib/components/settings/SourceEditor.svelte';
-  import { setTheme, ui, effectiveDark, THEME_LABELS, type Theme } from '#lib/ui.svelte.ts';
+  import {
+    setTextSize,
+    setTheme,
+    ui,
+    TEXT_SIZE_LABELS,
+    TEXT_SIZE_ORDER,
+    THEME_LABELS,
+    type Theme
+  } from '#lib/ui.svelte.ts';
 
   let sources = $state<SourceState[]>([]);
   let conf = $state<SettingsPayload | null>(null);
@@ -129,41 +137,61 @@
 
 <div class="px-4 py-5 md:px-6 lg:px-8">
   {#if error}
-    <div class="mb-4 rounded-lg bg-chip px-3 py-2 text-[12.5px] text-neg">{error}</div>
+    <div class="mb-4 rounded-lg bg-chip px-3 py-2 fs-125 text-neg">{error}</div>
   {/if}
 
   <section class="mb-6 max-w-4xl">
-    <h2 class="mb-2 text-[13px] font-semibold text-ink">外观</h2>
-    <div class="flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-4">
-      <div class="flex rounded-[10px] bg-chip p-[3px]" role="group" aria-label="主题">
-        {#each ['system', 'light', 'dark'] as t (t)}
-          <button
-            type="button"
-            class="rounded-[7px] px-3 py-1.5 text-[12.5px] transition-colors
-              {ui.theme === t
-              ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
-              : 'text-ink-2 hover:text-ink'}"
-            onclick={() => setTheme(t as Theme)}
-            aria-pressed={ui.theme === t}
-          >
-            {THEME_LABELS[t as Theme]}
-          </button>
-        {/each}
+    <h2 class="mb-2 fs-13 font-semibold text-ink">外观</h2>
+    <div
+      class="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-line bg-surface p-4"
+    >
+      <div class="flex shrink-0 items-center gap-2.5">
+        <span class="fs-11 text-ink-3">主题</span>
+        <div class="flex rounded-[10px] bg-chip p-[3px]" role="group" aria-label="主题">
+          {#each ['system', 'light', 'dark'] as t (t)}
+            <button
+              type="button"
+              class="rounded-[7px] px-3 py-1.5 fs-125 transition-colors
+                {ui.theme === t
+                ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
+                : 'text-ink-2 hover:text-ink'}"
+              onclick={() => setTheme(t as Theme)}
+              aria-pressed={ui.theme === t}
+            >
+              {THEME_LABELS[t as Theme]}
+            </button>
+          {/each}
+        </div>
       </div>
-      <span class="text-[11px] text-ink-3">
-        当前{effectiveDark() ? '深色' : '浅色'}{ui.theme === 'system' ? '（跟随系统）' : ''}
-      </span>
+      <div class="flex shrink-0 items-center gap-2.5">
+        <span class="fs-11 text-ink-3">字号</span>
+        <div class="flex rounded-[10px] bg-chip p-[3px]" role="group" aria-label="文字大小">
+          {#each TEXT_SIZE_ORDER as s (s)}
+            <button
+              type="button"
+              class="rounded-[7px] px-3 py-1.5 fs-125 transition-colors
+                {ui.textSize === s
+                ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
+                : 'text-ink-2 hover:text-ink'}"
+              onclick={() => setTextSize(s)}
+              aria-pressed={ui.textSize === s}
+            >
+              {TEXT_SIZE_LABELS[s]}
+            </button>
+          {/each}
+        </div>
+      </div>
     </div>
-    <p class="mt-2 text-[11px] text-ink-3">
-      偏好存在这台设备的浏览器里，不写进数据库；选「跟随系统」时窗口深浅色变化会即时跟上。
+    <p class="mt-2 fs-11 text-ink-3">
+      主题与字号偏好存在这台设备的浏览器里，不写进数据库；「跟随系统」会随窗口深浅色即时切换，字号只缩放文字、不动间距。
     </p>
   </section>
 
   <section class="mb-6 max-w-5xl">
     <div class="mb-2 flex items-baseline gap-2">
-      <h2 class="text-[13px] font-semibold text-ink">数据源</h2>
+      <h2 class="fs-13 font-semibold text-ink">数据源</h2>
       {#if !loading}
-        <span class="tnum text-[11px] text-ink-3">
+        <span class="tnum fs-11 text-ink-3">
           已配置 {configuredCount}/{sourceEndpoints.length}
         </span>
       {/if}
@@ -171,7 +199,7 @@
 
     <!-- 优先级说明放在表格正上方：用户改配置前先看到规则，不用去翻文档。 -->
     <div
-      class="mb-2.5 rounded-xl border border-line bg-surface-2 p-3 text-[11.5px] leading-relaxed text-ink-2"
+      class="mb-2.5 rounded-xl border border-line bg-surface-2 p-3 fs-115 leading-relaxed text-ink-2"
     >
       <p class="font-medium text-ink">配置优先级：页面 &gt; 环境变量</p>
       <ul class="mt-1 list-disc space-y-0.5 pl-4">
@@ -194,17 +222,15 @@
     </div>
 
     {#if loading}
-      <div class="py-10 text-center text-[12.5px] text-ink-3">加载中…</div>
+      <div class="py-10 text-center fs-125 text-ink-3">加载中…</div>
     {:else if sourceEndpoints.length === 0}
-      <div
-        class="rounded-xl border border-line bg-surface py-10 text-center text-[12.5px] text-ink-3"
-      >
+      <div class="rounded-xl border border-line bg-surface py-10 text-center fs-125 text-ink-3">
         没有任何数据源。这是配置层的问题（env 源清单为空），检查启动参数。
       </div>
     {:else}
       <div class="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table class="w-full text-left text-[12px] md:min-w-[860px]">
-          <thead class="border-b border-line text-[11px] text-ink-3">
+        <table class="w-full text-left fs-12 md:min-w-[860px]">
+          <thead class="border-b border-line fs-11 text-ink-3">
             <tr>
               <th class="px-3 py-2.5 font-medium">源</th>
               <th class="px-3 py-2.5 font-medium">状态</th>
@@ -288,10 +314,8 @@
       </div>
 
       {#if failing.length > 0}
-        <details
-          class="mt-2 rounded-xl border border-line bg-surface px-3 py-2 text-[12px] text-ink-2"
-        >
-          <summary class="cursor-pointer text-[11px] text-ink-3 select-none">
+        <details class="mt-2 rounded-xl border border-line bg-surface px-3 py-2 fs-12 text-ink-2">
+          <summary class="cursor-pointer fs-11 text-ink-3 select-none">
             展开 {failing.length} 个源的最新错误
           </summary>
           <ul class="mt-2 space-y-1">
@@ -310,8 +334,8 @@
 
   <section class="max-w-5xl">
     <div class="mb-2 flex items-baseline gap-2">
-      <h2 class="text-[13px] font-semibold text-ink">通知渠道</h2>
-      <span class="text-[11px] text-ink-3">同步失败、手动测试都会走这里</span>
+      <h2 class="fs-13 font-semibold text-ink">通知渠道</h2>
+      <span class="fs-11 text-ink-3">同步失败、手动测试都会走这里</span>
     </div>
 
     <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
@@ -339,15 +363,15 @@
         ></span>
       </button>
       <div class="min-w-0 flex-1">
-        <p class="text-[12.5px] font-medium text-ink">同步失败时推送</p>
-        <p class="text-[11px] leading-relaxed text-ink-3">
+        <p class="fs-125 font-medium text-ink">同步失败时推送</p>
+        <p class="fs-11 leading-relaxed text-ink-3">
           同一数据源由正常转为失败时发一条；同一源 6 小时内不重复。默认关闭——通知是出站请求，
           不能因为配了渠道就自动开始发。
         </p>
       </div>
     </div>
 
-    <p class="mt-2 text-[11px] leading-relaxed text-ink-3">
+    <p class="mt-2 fs-11 leading-relaxed text-ink-3">
       说明：本应用没有内置登录。设置页可以写入凭据，请只在受信网络内访问；
       要放到公网，请在前置反向代理上加认证。凭据加密密钥若换了（改
       <code class="rounded bg-chip px-1">GUANFU_SECRET_KEY</code> 或删除密钥文件），旧密文会解不开， 页面会明确报错，重新填一次即可。

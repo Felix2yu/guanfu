@@ -143,17 +143,17 @@
 
 <div class="rounded-xl border border-line bg-surface p-3">
   <div class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-    <h3 class="text-[13px] font-semibold text-ink">Apprise</h3>
+    <h3 class="fs-13 font-semibold text-ink">Apprise</h3>
     <span class="tag">{endpoint.origin === 'page' ? '页面配置' : '环境变量'}</span>
     {#if endpoint.enabled && endpoint.base_url}
-      <span class="text-[11px] text-pos">已启用</span>
+      <span class="fs-11 text-pos">已启用</span>
     {:else}
-      <span class="text-[11px] text-ink-3">未启用</span>
+      <span class="fs-11 text-ink-3">未启用</span>
     {/if}
-    <span class="ml-auto text-[11px] text-ink-3">{endpoint.credential_env}</span>
+    <span class="ml-auto fs-11 text-ink-3">{endpoint.credential_env}</span>
   </div>
 
-  <p class="mb-2.5 text-[11.5px] leading-relaxed text-ink-3">
+  <p class="mb-2.5 fs-115 leading-relaxed text-ink-3">
     Apprise API 的 <code class="rounded bg-chip px-1">/notify</code>。Key
     是服务端已保存的配置名；留空则直接在下方写目标 URL（Apprise URL 形态，如
     <code class="rounded bg-chip px-1">tgram://bot/chat</code>）。
@@ -204,7 +204,7 @@
     </Field>
 
     <Field label="启用">
-      <label class="flex h-[30px] items-center gap-2 text-[12.5px] text-ink-2">
+      <label class="flex h-[30px] items-center gap-2 fs-125 text-ink-2">
         <input
           type="checkbox"
           class="h-3.5 w-3.5 accent-[var(--gf-accent)]"
@@ -228,7 +228,7 @@
   </div>
 
   {#if endpoint.error}
-    <p class="mt-2 rounded-md bg-chip px-2 py-1.5 text-[11.5px] text-neg">
+    <p class="mt-2 rounded-md bg-chip px-2 py-1.5 fs-115 text-neg">
       现有配置有问题：{endpoint.error}
     </p>
   {/if}
@@ -252,13 +252,13 @@
   </div>
 
   {#if flash}
-    <p class="mt-2 text-[11.5px] text-pos">{flash}</p>
+    <p class="mt-2 fs-115 text-pos">{flash}</p>
   {/if}
   {#if error}
-    <p class="mt-2 text-[11.5px] text-neg">{error}</p>
+    <p class="mt-2 fs-115 text-neg">{error}</p>
   {/if}
   {#if result}
-    <div class="mt-2 rounded-md border border-line bg-surface-2 px-2.5 py-2 text-[11.5px]">
+    <div class="mt-2 rounded-md border border-line bg-surface-2 px-2.5 py-2 fs-115">
       <p class={result.ok ? 'text-pos' : 'text-neg'}>
         {result.ok ? '发送成功' : '发送失败'}
         {#if result.status}

@@ -139,9 +139,9 @@
 >
   <span class="mt-[7px] h-2 w-2 shrink-0 rounded-full" style:background={dotColor}></span>
 
-  <span class="w-11 shrink-0 text-[11px] text-ink-3 tabular-nums">
+  <span class="w-11 shrink-0 fs-11 text-ink-3 tabular-nums">
     {#if isDay}
-      <span class="rounded bg-chip px-1.5 py-0.5 text-[10px] font-medium text-ink-2">全天</span>
+      <span class="rounded bg-chip px-1.5 py-0.5 fs-10 font-medium text-ink-2">全天</span>
     {:else}
       {timeText}
     {/if}
@@ -160,12 +160,12 @@
   <div class="min-w-0 flex-1">
     <div class="flex items-baseline gap-2">
       {#if diary?.emoji}
-        <span class="shrink-0 text-sm" aria-label="心情">{diary.emoji}</span>
+        <span class="shrink-0 fs-14" aria-label="心情">{diary.emoji}</span>
       {/if}
       <span class="truncate font-medium text-ink">{event.title}</span>
       {#if amountText}
         <span
-          class="shrink-0 text-[13px] font-semibold tabular-nums {event.detail?.type === 'income'
+          class="shrink-0 fs-13 font-semibold tabular-nums {event.detail?.type === 'income'
             ? 'text-pos'
             : 'text-neg'}"
         >
@@ -173,30 +173,30 @@
         </span>
       {/if}
       {#if rating > 0}
-        <span class="shrink-0 text-[11px] tracking-tight text-ink-2" aria-label="评分 {rating} 星">
+        <span class="shrink-0 fs-11 tracking-tight text-ink-2" aria-label="评分 {rating} 星">
           {'★'.repeat(Math.min(rating, 5))}{#if rating < 5}<span class="text-line-strong"
               >{'★'.repeat(5 - rating)}</span
             >{/if}
         </span>
       {/if}
       {#if event.location_name}
-        <span class="shrink-0 truncate text-[11px] text-ink-3">📍 {event.location_name}</span>
+        <span class="shrink-0 truncate fs-11 text-ink-3">📍 {event.location_name}</span>
       {:else if coordText}
-        <span class="shrink-0 truncate text-[11px] text-ink-3 tabular-nums">📍 {coordText}</span>
+        <span class="shrink-0 truncate fs-11 text-ink-3 tabular-nums">📍 {coordText}</span>
       {/if}
     </div>
     {#if event.summary && event.summary !== event.title}
-      <div class="truncate text-[11px] text-ink-3">{event.summary}</div>
+      <div class="truncate fs-11 text-ink-3">{event.summary}</div>
     {/if}
     {#if diary?.lines}
-      <div class="mt-1 line-clamp-3 text-[11px] leading-relaxed whitespace-pre-line text-ink-2">
+      <div class="mt-1 line-clamp-3 fs-11 leading-relaxed whitespace-pre-line text-ink-2">
         {diary.lines}
       </div>
     {/if}
     {#if healthChips.length > 0}
       <div class="mt-1 flex flex-wrap gap-1">
         {#each healthChips as chip (chip.key)}
-          <span class="rounded bg-chip px-1.5 py-0.5 text-[10px] text-ink-2 tabular-nums">
+          <span class="rounded bg-chip px-1.5 py-0.5 fs-10 text-ink-2 tabular-nums">
             {chip.label}
             {chip.display}
           </span>
@@ -206,7 +206,7 @@
     {#if habitChips.length > 0}
       <div class="mt-1 flex flex-wrap gap-1">
         {#each habitChips as chip (chip.name)}
-          <span class="rounded bg-chip px-1.5 py-0.5 text-[10px] text-ink-2">
+          <span class="rounded bg-chip px-1.5 py-0.5 fs-10 text-ink-2">
             {chip.name}{#if chip.count > 1}<span class="ml-0.5 text-ink-3 tabular-nums"
                 >×{chip.count}</span
               >{/if}
@@ -232,8 +232,7 @@
               onerror={() => (failed[t.i] = true)}
             />
             {#if t.m.kind === 'video'}
-              <span
-                class="absolute right-0.5 bottom-0.5 text-[9px] leading-none text-white drop-shadow"
+              <span class="absolute right-0.5 bottom-0.5 fs-9 leading-none text-white drop-shadow"
                 >▶</span
               >
             {/if}
@@ -242,7 +241,7 @@
         {#if photoMore > 0}
           <button
             type="button"
-            class="flex aspect-square items-center justify-center rounded bg-chip text-[11px] font-medium text-ink-2 tabular-nums"
+            class="flex aspect-square items-center justify-center rounded bg-chip fs-11 font-medium text-ink-2 tabular-nums"
             onclick={() => openLightbox(photoGrid.length)}
           >
             +{photoMore}
@@ -252,7 +251,7 @@
     {/if}
   </div>
 
-  <span class="shrink-0 text-[11px] text-ink-3">
+  <span class="shrink-0 fs-11 text-ink-3">
     {#if typeLabel === meta.label}{typeLabel}{:else}{typeLabel} · {meta.label}{/if}
   </span>
 </div>
@@ -272,7 +271,7 @@
     {#if failed[lightbox]}
       <!-- 灯箱里这张也取不到：给一句人话，不摆破图图标。 -->
       <div
-        class="flex max-h-[80vh] items-center rounded bg-zinc-800/70 px-8 py-16 text-sm text-zinc-300"
+        class="flex max-h-[80vh] items-center rounded bg-zinc-800/70 px-8 py-16 fs-14 text-zinc-300"
       >
         这张图没取到，源站返回了错误
       </div>
@@ -284,7 +283,7 @@
         onerror={() => (failed[lightbox] = true)}
       />
     {/if}
-    <div class="mt-3 flex items-center gap-4 text-sm text-white">
+    <div class="mt-3 flex items-center gap-4 fs-14 text-white">
       <button
         class="rounded-full border border-white/40 px-3 py-1 hover:bg-white/10"
         onclick={() => stepLightbox(-1)}>←</button
