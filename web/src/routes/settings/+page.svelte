@@ -16,7 +16,11 @@
     type SettingsPayload
   } from '#lib/settings.ts';
   import TopBar from '#lib/components/TopBar.svelte';
+  import Segmented from '#lib/components/Segmented.svelte';
+  import Switch from '#lib/components/Switch.svelte';
   import NotifyEditor from '#lib/components/settings/NotifyEditor.svelte';
+  import Row from '#lib/components/settings/Row.svelte';
+  import Section from '#lib/components/settings/Section.svelte';
   import SourceEditor from '#lib/components/settings/SourceEditor.svelte';
   import {
     setTextSize,
@@ -25,16 +29,27 @@
     TEXT_SIZE_LABELS,
     TEXT_SIZE_ORDER,
     THEME_LABELS,
+    type TextSize,
     type Theme
   } from '#lib/ui.svelte.ts';
+
+  const THEME_OPTIONS = (['system', 'light', 'dark'] as Theme[]).map((t) => ({
+    value: t,
+    label: THEME_LABELS[t]
+  }));
+  const SIZE_OPTIONS = TEXT_SIZE_ORDER.map((s) => ({ value: s, label: TEXT_SIZE_LABELS[s] }));
 
   let sources = $state<SourceState[]>([]);
   let conf = $state<SettingsPayload | null>(null);
   let error = $state('');
   let loading = $state(true);
+  // 数据源和通知渠道共用一个展开位：同时开两处，未保存的改动归谁就说不清了。
   let editing = $state<string | null>(null);
   let editorDirty = $state(false);
   let policyBusy = $state(false);
+  // 开关自己持一份状态：保存失败时要能 true→false 走一次真实变更，
+  // 直接把 checked 指回 conf 不会触发 DOM 写回（新旧值相同），开关会停在错的那边。
+  let policyOn = $state(false);
 
   onMount(() => {
     void load();
@@ -47,6 +62,7 @@
       const [s, c] = await Promise.all([fetchSources(), fetchSettings()]);
       sources = s;
       conf = c;
+      policyOn = c.policy.notify_on_sync_failure;
     } catch (e) {
       error = String(e);
     } finally {
@@ -100,16 +116,18 @@
     editorDirty = false;
   }
 
-  async function togglePolicy() {
+  async function togglePolicy(on: boolean) {
     if (!conf) return;
+    policyOn = on;
     policyBusy = true;
     error = '';
-    const next = { notify_on_sync_failure: !conf.policy.notify_on_sync_failure };
     try {
-      const p = await savePolicy(next);
+      const p = await savePolicy({ notify_on_sync_failure: on });
       conf = { ...conf, policy: p };
+      policyOn = p.notify_on_sync_failure;
     } catch (e) {
       error = String(e);
+      policyOn = conf.policy.notify_on_sync_failure;
     } finally {
       policyBusy = false;
     }
@@ -135,111 +153,55 @@
 
 <TopBar current="设置" />
 
-<div class="px-4 py-5 md:px-6 lg:px-8">
+<div class="mx-auto w-full max-w-[1080px] px-4 py-5 md:px-6 lg:px-8">
   {#if error}
-    <div class="mb-4 rounded-lg bg-chip px-3 py-2 fs-125 text-neg">{error}</div>
+    <div class="mb-4 rounded-lg bg-chip px-3 py-2 fs-125 text-neg" role="alert">{error}</div>
   {/if}
 
-  <section class="mb-6 max-w-4xl">
-    <h2 class="mb-2 fs-13 font-semibold text-ink">外观</h2>
-    <div
-      class="flex flex-wrap items-center gap-x-6 gap-y-3 rounded-xl border border-line bg-surface p-4"
-    >
-      <div class="flex shrink-0 items-center gap-2.5">
-        <span class="fs-11 text-ink-3">主题</span>
-        <div class="flex rounded-[10px] bg-chip p-[3px]" role="group" aria-label="主题">
-          {#each ['system', 'light', 'dark'] as t (t)}
-            <button
-              type="button"
-              class="rounded-[7px] px-3 py-1.5 fs-125 transition-colors
-                {ui.theme === t
-                ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
-                : 'text-ink-2 hover:text-ink'}"
-              onclick={() => setTheme(t as Theme)}
-              aria-pressed={ui.theme === t}
-            >
-              {THEME_LABELS[t as Theme]}
-            </button>
-          {/each}
-        </div>
-      </div>
-      <div class="flex shrink-0 items-center gap-2.5">
-        <span class="fs-11 text-ink-3">字号</span>
-        <div class="flex rounded-[10px] bg-chip p-[3px]" role="group" aria-label="文字大小">
-          {#each TEXT_SIZE_ORDER as s (s)}
-            <button
-              type="button"
-              class="rounded-[7px] px-3 py-1.5 fs-125 transition-colors
-                {ui.textSize === s
-                ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
-                : 'text-ink-2 hover:text-ink'}"
-              onclick={() => setTextSize(s)}
-              aria-pressed={ui.textSize === s}
-            >
-              {TEXT_SIZE_LABELS[s]}
-            </button>
-          {/each}
-        </div>
-      </div>
-    </div>
-    <p class="mt-2 fs-11 text-ink-3">
-      主题与字号偏好存在这台设备的浏览器里，不写进数据库；「跟随系统」会随窗口深浅色即时切换，字号只缩放文字、不动间距。
-    </p>
-  </section>
+  <Section title="外观" meta="存在这台设备的浏览器里，不写进数据库">
+    <Row title="主题" desc="「跟随系统」随窗口深浅色即时切换">
+      <Segmented
+        label="主题"
+        options={THEME_OPTIONS}
+        value={ui.theme}
+        onchange={(v) => setTheme(v as Theme)}
+      />
+    </Row>
+    <Row title="字号" desc="只缩放文字，间距、圆角、图标尺寸保持原样">
+      <Segmented
+        label="文字大小"
+        options={SIZE_OPTIONS}
+        value={ui.textSize}
+        onchange={(v) => setTextSize(v as TextSize)}
+      />
+    </Row>
+  </Section>
 
-  <section class="mb-6 max-w-5xl">
-    <div class="mb-2 flex items-baseline gap-2">
-      <h2 class="fs-13 font-semibold text-ink">数据源</h2>
-      {#if !loading}
-        <span class="tnum fs-11 text-ink-3">
-          已配置 {configuredCount}/{sourceEndpoints.length}
-        </span>
-      {/if}
-    </div>
-
-    <!-- 优先级说明放在表格正上方：用户改配置前先看到规则，不用去翻文档。 -->
-    <div
-      class="mb-2.5 rounded-xl border border-line bg-surface-2 p-3 fs-115 leading-relaxed text-ink-2"
-    >
-      <p class="font-medium text-ink">配置优先级：页面 &gt; 环境变量</p>
-      <ul class="mt-1 list-disc space-y-0.5 pl-4">
-        <li>
-          在页面保存过的端点，<span class="text-ink">地址 / 认证方式 / 凭据 / 启用 / 间隔</span
-          >全部以页面为准；页面里留空就是清空，不会回退到环境变量。
-        </li>
-        <li>没保存过的端点完全读环境变量，改 env 重启即生效。</li>
-        <li>「恢复环境变量」= 删除该端点的页面配置。</li>
-        <li>
-          保存后立即生效：该源的适配器按新配置重建并重新调度，<span class="text-ink"
-            >不需要重启进程</span
-          >。
-        </li>
-      </ul>
-      <p class="mt-1.5 text-ink-3">
-        页面写入的凭据以 AES-GCM 密文落库（密钥：{secretSourceLabel}），接口只回末 4
-        位；明文不会经过浏览器。
-      </p>
-    </div>
-
+  <Section
+    title="数据源"
+    meta={loading
+      ? ''
+      : `已配置 ${configuredCount}/${sourceEndpoints.length} · 优先级 页面 > 环境变量`}
+  >
     {#if loading}
-      <div class="py-10 text-center fs-125 text-ink-3">加载中…</div>
+      <div class="px-4 py-10 text-center fs-125 text-ink-3">加载中…</div>
     {:else if sourceEndpoints.length === 0}
-      <div class="rounded-xl border border-line bg-surface py-10 text-center fs-125 text-ink-3">
+      <div class="px-4 py-10 text-center fs-125 text-ink-3">
         没有任何数据源。这是配置层的问题（env 源清单为空），检查启动参数。
       </div>
     {:else}
-      <div class="overflow-x-auto rounded-xl border border-line bg-surface">
-        <table class="w-full text-left fs-12 md:min-w-[860px]">
+      <div class="overflow-x-auto">
+        <table class="w-full text-left fs-12 md:min-w-[880px]">
           <thead class="border-b border-line fs-11 text-ink-3">
             <tr>
-              <th class="px-3 py-2.5 font-medium">源</th>
-              <th class="px-3 py-2.5 font-medium">状态</th>
-              <th class="hidden px-3 py-2.5 font-medium md:table-cell">端点</th>
-              <th class="hidden px-3 py-2.5 font-medium lg:table-cell">认证</th>
-              <th class="hidden px-3 py-2.5 font-medium lg:table-cell">凭据</th>
-              <th class="hidden px-3 py-2.5 text-right font-medium md:table-cell">间隔</th>
-              <th class="hidden px-3 py-2.5 text-right font-medium sm:table-cell">上次同步</th>
-              <th class="px-3 py-2.5 text-right font-medium"></th>
+              <th class="px-4 py-2.5 font-medium">源</th>
+              <th class="px-4 py-2.5 font-medium">状态</th>
+              <th class="hidden px-4 py-2.5 font-medium md:table-cell">端点</th>
+              <th class="hidden px-4 py-2.5 font-medium lg:table-cell">认证</th>
+              <th class="hidden px-4 py-2.5 font-medium lg:table-cell">凭据</th>
+              <th class="hidden px-4 py-2.5 text-right font-medium md:table-cell">间隔</th>
+              <th class="hidden px-4 py-2.5 text-right font-medium sm:table-cell">上次同步</th>
+              <th class="px-4 py-2.5 text-right font-medium"></th>
             </tr>
           </thead>
           <tbody>
@@ -247,43 +209,43 @@
               {@const st = statusOf(e.name)}
               {@const s = stateOf(e.name)}
               <tr class="border-t border-line">
-                <td class="px-3 py-2">
+                <td class="px-4 py-2.5">
                   <span class="font-medium text-ink">{sourceLabel(e.name)}</span>
                   <!-- 窄屏只留中文名 + 来源徽标：7 列在 390px 上会把「编辑」挤出屏幕。 -->
                   <span class="ml-1.5 hidden text-ink-3 sm:inline">{e.name}</span>
                   <span class="ml-1.5 tag">{e.origin === 'page' ? '页面' : 'env'}</span>
                 </td>
-                <td class="px-3 py-2 {st.cls}" title={s?.last_error || undefined}>
+                <td class="px-4 py-2.5 {st.cls}" title={s?.last_error || undefined}>
                   <span class="inline-flex items-center gap-1.5">
                     <span class="h-1.5 w-1.5 rounded-full" style:background={st.dot}></span>
                     {st.label}
                   </span>
                 </td>
                 <td
-                  class="hidden max-w-[220px] truncate px-3 py-2 text-ink-3 md:table-cell"
+                  class="hidden max-w-[220px] truncate px-4 py-2.5 text-ink-3 md:table-cell"
                   title={e.base_url || ''}
                 >
                   {e.base_url || '—'}
                 </td>
-                <td class="hidden px-3 py-2 text-ink-3 lg:table-cell">
+                <td class="hidden px-4 py-2.5 text-ink-3 lg:table-cell">
                   {AUTH_LABELS[e.auth as AuthKind]}
                 </td>
-                <td class="hidden px-3 py-2 text-ink-3 lg:table-cell">
+                <td class="hidden px-4 py-2.5 lg:table-cell">
                   {#if e.auth === 'none'}
-                    不需要
+                    <span class="text-ink-3">不需要</span>
                   {:else if e.secret_set}
                     <span class="text-pos">{e.secret_hint}</span>
                   {:else}
                     <span class="text-ink-3">未设置</span>
                   {/if}
                 </td>
-                <td class="tnum hidden px-3 py-2 text-right text-ink-3 md:table-cell">
+                <td class="tnum hidden px-4 py-2.5 text-right text-ink-3 md:table-cell">
                   {fmtInterval(e.interval_secs || s?.interval_secs || 0)}
                 </td>
-                <td class="tnum hidden px-3 py-2 text-right text-ink-3 sm:table-cell">
+                <td class="tnum hidden px-4 py-2.5 text-right text-ink-3 sm:table-cell">
                   {fmtAgo(s?.last_sync_at ?? 0)}
                 </td>
-                <td class="px-3 py-2 text-right">
+                <td class="px-4 py-2.5 text-right">
                   <button
                     type="button"
                     class="btn"
@@ -314,7 +276,7 @@
       </div>
 
       {#if failing.length > 0}
-        <details class="mt-2 rounded-xl border border-line bg-surface px-3 py-2 fs-12 text-ink-2">
+        <details class="px-4 py-2.5 fs-12 text-ink-2">
           <summary class="cursor-pointer fs-11 text-ink-3 select-none">
             展开 {failing.length} 个源的最新错误
           </summary>
@@ -329,52 +291,62 @@
           </ul>
         </details>
       {/if}
+
+      <!-- 长说明折进卡片末尾：改配置前先给一行结论（标题旁的优先级），细节按需展开。 -->
+      <details class="px-4 py-2.5 fs-115 leading-relaxed text-ink-2">
+        <summary class="cursor-pointer fs-11 text-ink-3 select-none">
+          配置说明：优先级 · 生效时机 · 凭据加密
+        </summary>
+        <ul class="mt-2 list-disc space-y-1 pl-4">
+          <li>
+            在页面保存过的端点，<span class="text-ink">地址 / 认证方式 / 凭据 / 启用 / 间隔</span
+            >全部以页面为准；页面里留空就是清空，不会回退到环境变量。
+          </li>
+          <li>没保存过的端点完全读环境变量，改 env 重启即生效。</li>
+          <li>「恢复环境变量」= 删除该端点的页面配置。</li>
+          <li>
+            保存后立即生效：该源的适配器按新配置重建并重新调度，<span class="text-ink"
+              >不需要重启进程</span
+            >。
+          </li>
+          <li>
+            页面写入的凭据以 AES-GCM 密文落库（密钥：{secretSourceLabel}），接口只回末 4
+            位；明文不会经过浏览器。
+          </li>
+        </ul>
+      </details>
     {/if}
-  </section>
+  </Section>
 
-  <section class="max-w-5xl">
-    <div class="mb-2 flex items-baseline gap-2">
-      <h2 class="fs-13 font-semibold text-ink">通知渠道</h2>
-      <span class="fs-11 text-ink-3">同步失败、手动测试都会走这里</span>
-    </div>
-
-    <div class="grid grid-cols-1 gap-3 xl:grid-cols-2">
+  <Section title="通知渠道" meta="同步失败、手动测试都走这里" foot={footNote}>
+    {#if conf}
       {#each notifyEndpoints as e (e.name)}
-        <NotifyEditor endpoint={e} authModes={conf?.auth_modes ?? []} onsaved={replaceEndpoint} />
+        <NotifyEditor
+          endpoint={e}
+          authModes={conf.auth_modes ?? []}
+          open={editing === e.name}
+          ontoggle={() => toggleEditor(e.name)}
+          onsaved={replaceEndpoint}
+          onDirty={(d) => (editorDirty = d)}
+        />
       {/each}
-    </div>
-
-    <div
-      class="mt-3 flex flex-wrap items-center gap-3 rounded-xl border border-line bg-surface p-3"
-    >
-      <button
-        type="button"
-        role="switch"
-        aria-checked={conf?.policy.notify_on_sync_failure ?? false}
-        aria-label="同步失败时推送"
-        class="relative h-5 w-9 shrink-0 rounded-full transition-colors
-          {conf?.policy.notify_on_sync_failure ? 'bg-accent' : 'bg-line-strong'}"
-        onclick={togglePolicy}
-        disabled={policyBusy}
-      >
-        <span
-          class="absolute top-0.5 h-4 w-4 rounded-full bg-surface transition-[left]
-            {conf?.policy.notify_on_sync_failure ? 'left-[18px]' : 'left-0.5'}"
-        ></span>
-      </button>
-      <div class="min-w-0 flex-1">
-        <p class="fs-125 font-medium text-ink">同步失败时推送</p>
-        <p class="fs-11 leading-relaxed text-ink-3">
-          同一数据源由正常转为失败时发一条；同一源 6 小时内不重复。默认关闭——通知是出站请求，
-          不能因为配了渠道就自动开始发。
-        </p>
-      </div>
-    </div>
-
-    <p class="mt-2 fs-11 leading-relaxed text-ink-3">
-      说明：本应用没有内置登录。设置页可以写入凭据，请只在受信网络内访问；
-      要放到公网，请在前置反向代理上加认证。凭据加密密钥若换了（改
-      <code class="rounded bg-chip px-1">GUANFU_SECRET_KEY</code> 或删除密钥文件），旧密文会解不开， 页面会明确报错，重新填一次即可。
-    </p>
-  </section>
+      <Row title="同步失败时推送" desc="正常转为失败时发一条，同一源 6 小时内不重复">
+        <Switch
+          checked={policyOn}
+          label="同步失败时推送"
+          disabled={policyBusy}
+          onchange={togglePolicy}
+        />
+      </Row>
+    {:else}
+      <div class="px-4 py-10 text-center fs-125 text-ink-3">加载中…</div>
+    {/if}
+  </Section>
 </div>
+
+{#snippet footNote()}
+  <p>
+    本应用没有内置登录，设置页可以写入凭据，请只在受信网络内访问；要放到公网，请在前置反向代理上加认证。加密密钥若换了（改
+    <code class="rounded bg-chip px-1">GUANFU_SECRET_KEY</code> 或删除密钥文件），旧密文会解不开，页面会明确报错，重新填一次即可。
+  </p>
+{/snippet}

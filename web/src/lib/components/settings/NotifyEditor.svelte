@@ -1,5 +1,6 @@
 <script lang="ts">
-  // 通知渠道编辑器（Apprise）。
+  // 通知渠道（Apprise）：状态行 + 就地展开的表单，和数据源用同一套开合逻辑。
+  // 单渠道常驻展开会让这张卡比同页其它卡长出三四倍，收起后行高就一致了。
   //
   // 测试发送打的是「已保存」的配置（后端按生效配置构造渠道），
   // 所以按钮写成「保存并测试」——避免用户改了地址点测试、实际测的是旧地址。
@@ -14,15 +15,23 @@
   } from '#lib/settings.ts';
   import { untrack } from 'svelte';
   import Field from './Field.svelte';
+  import Row from './Row.svelte';
+  import Switch from '../Switch.svelte';
 
   let {
     endpoint,
     authModes,
-    onsaved
+    open,
+    ontoggle,
+    onsaved,
+    onDirty = () => {}
   }: {
     endpoint: EndpointView;
     authModes: AuthKind[];
+    open: boolean;
+    ontoggle: () => void;
     onsaved: (e: EndpointView) => void;
+    onDirty?: (dirty: boolean) => void;
   } = $props();
 
   // 同 SourceEditor：挂载时取一次 props，保存/重置后用后端返回值回填。
@@ -36,6 +45,23 @@
   let key = $state(init.extras?.key ?? '');
   let targets = $state(init.extras?.targets ?? '');
 
+  let baseline = $state({
+    baseUrl: init.base_url,
+    auth: init.auth,
+    enabled: init.enabled,
+    key: init.extras?.key ?? '',
+    targets: init.extras?.targets ?? ''
+  });
+  const dirty = $derived(
+    baseUrl !== baseline.baseUrl ||
+      auth !== baseline.auth ||
+      enabled !== baseline.enabled ||
+      key !== baseline.key ||
+      targets !== baseline.targets ||
+      secret !== '' ||
+      clearSecret
+  );
+
   let busy = $state<'' | 'save' | 'test' | 'reset'>('');
   let error = $state('');
   let result = $state<NotifyResult | null>(null);
@@ -43,6 +69,10 @@
 
   let confirmReset = $state(false);
   let resetTimer: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    onDirty(dirty);
+  });
 
   const secretPlaceholder = $derived(
     clearSecret
@@ -52,12 +82,38 @@
         : '粘贴凭据（无鉴权可留空）'
   );
 
+  const summary = $derived(
+    [
+      baseUrl || '未配置地址',
+      key
+        ? `key: ${key}`
+        : targets
+          ? `目标 ${targets.split(/[\s,]+/).filter(Boolean).length} 条`
+          : '未填目标'
+    ].join(' · ')
+  );
+
+  const status = $derived(
+    !endpoint.base_url
+      ? { label: '未配置', cls: 'text-ink-3' }
+      : endpoint.enabled
+        ? { label: '已启用', cls: 'text-pos' }
+        : { label: '已停用', cls: 'text-ink-3' }
+  );
+
   function applyEndpoint(e: EndpointView) {
     baseUrl = e.base_url;
     auth = e.auth;
     enabled = e.enabled;
     key = e.extras?.key ?? '';
     targets = e.extras?.targets ?? '';
+    baseline = {
+      baseUrl: e.base_url,
+      auth: e.auth,
+      enabled: e.enabled,
+      key: e.extras?.key ?? '',
+      targets: e.extras?.targets ?? ''
+    };
     secret = '';
     clearSecret = false;
   }
@@ -141,134 +197,131 @@
   }
 </script>
 
-<div class="rounded-xl border border-line bg-surface p-3">
-  <div class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-    <h3 class="fs-13 font-semibold text-ink">Apprise</h3>
-    <span class="tag">{endpoint.origin === 'page' ? '页面配置' : '环境变量'}</span>
-    {#if endpoint.enabled && endpoint.base_url}
-      <span class="fs-11 text-pos">已启用</span>
-    {:else}
-      <span class="fs-11 text-ink-3">未启用</span>
-    {/if}
-    <span class="ml-auto fs-11 text-ink-3">{endpoint.credential_env}</span>
-  </div>
+<Row title="Apprise" desc={summary}>
+  <span class="tag">{endpoint.origin === 'page' ? '页面' : 'env'}</span>
+  <span class="fs-11 {status.cls}">{status.label}</span>
+  <button type="button" class="btn" aria-expanded={open} onclick={ontoggle}>
+    {open ? '收起' : '编辑'}
+  </button>
+</Row>
 
-  <p class="mb-2.5 fs-115 leading-relaxed text-ink-3">
-    Apprise API 的 <code class="rounded bg-chip px-1">/notify</code>。Key
-    是服务端已保存的配置名；留空则直接在下方写目标 URL（Apprise URL 形态，如
-    <code class="rounded bg-chip px-1">tgram://bot/chat</code>）。
-  </p>
-
-  <div class="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
-    <Field label="地址" hint={endpoint.env_base_url ? 'env: ' + endpoint.env_base_url : ''}>
-      <input class="field" bind:value={baseUrl} placeholder="http://host:port" spellcheck="false" />
-    </Field>
-
-    <Field label="认证方式" hint="自建实例通常无需凭据">
-      <select class="field" bind:value={auth}>
-        {#each authModes as m (m)}
-          <option value={m}>{AUTH_LABELS[m]}</option>
-        {/each}
-      </select>
-    </Field>
-
-    <Field label="凭据" hint="随认证方式发送">
-      <div class="flex items-center gap-1.5">
+{#if open}
+  <div class="bg-surface-2 px-4 py-3">
+    <div class="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2 xl:grid-cols-3">
+      <Field label="地址" hint={endpoint.env_base_url ? 'env: ' + endpoint.env_base_url : ''}>
         <input
-          class="field min-w-0 flex-1"
-          type="password"
-          autocomplete="new-password"
-          placeholder={secretPlaceholder}
-          bind:value={secret}
-          oninput={() => (clearSecret = false)}
+          class="field"
+          bind:value={baseUrl}
+          placeholder="http://host:8000"
+          spellcheck="false"
         />
-        {#if endpoint.secret_set}
-          {#if clearSecret}
-            <button type="button" class="btn-text shrink-0" onclick={() => (clearSecret = false)}>
-              撤销
-            </button>
-          {:else}
-            <button
-              type="button"
-              class="btn-text shrink-0 btn-text-danger"
-              onclick={() => {
-                clearSecret = true;
-                secret = '';
-              }}
-            >
-              清除
-            </button>
+      </Field>
+
+      <Field label="认证方式" hint="自建实例通常无需凭据">
+        <select class="field" bind:value={auth}>
+          {#each authModes as m (m)}
+            <option value={m}>{AUTH_LABELS[m]}</option>
+          {/each}
+        </select>
+      </Field>
+
+      <Field label="凭据" hint="随认证方式发送">
+        <div class="flex items-center gap-1.5">
+          <input
+            class="field min-w-0 flex-1"
+            type="password"
+            autocomplete="new-password"
+            placeholder={secretPlaceholder}
+            bind:value={secret}
+            oninput={() => (clearSecret = false)}
+          />
+          {#if endpoint.secret_set}
+            {#if clearSecret}
+              <button type="button" class="btn-text shrink-0" onclick={() => (clearSecret = false)}>
+                撤销
+              </button>
+            {:else}
+              <button
+                type="button"
+                class="btn-text shrink-0 btn-text-danger"
+                onclick={() => {
+                  clearSecret = true;
+                  secret = '';
+                }}
+              >
+                清除
+              </button>
+            {/if}
           {/if}
+        </div>
+      </Field>
+
+      <Field label="配置 Key" hint="服务端已保存的配置名">
+        <input class="field" bind:value={key} placeholder="例如 family" spellcheck="false" />
+      </Field>
+
+      <Field label="目标 URL" hint="Key 留空时必填，逗号/换行分隔">
+        <input
+          class="field"
+          bind:value={targets}
+          placeholder="tgram://bot/chat, mailto://…"
+          spellcheck="false"
+        />
+      </Field>
+
+      <Field label="启用">
+        <div class="flex h-[30px] items-center gap-2">
+          <Switch checked={enabled} label="参与推送" onchange={(v) => (enabled = v)} />
+          <span class="fs-12 text-ink-2">{enabled ? '参与推送' : '不发送'}</span>
+        </div>
+      </Field>
+    </div>
+
+    {#if endpoint.error}
+      <p class="mt-2 rounded-md bg-chip px-2 py-1.5 fs-115 text-neg">
+        现有配置有问题：{endpoint.error}
+      </p>
+    {/if}
+
+    <div class="mt-3 flex flex-wrap items-center gap-2">
+      <button type="button" class="btn btn-primary" onclick={onSave} disabled={busy !== ''}>
+        {busy === 'save' ? '保存中…' : '保存'}
+      </button>
+      <button type="button" class="btn" onclick={onSaveAndTest} disabled={busy !== ''}>
+        {busy === 'test' ? '发送中…' : '保存并测试'}
+      </button>
+      <button
+        type="button"
+        class="ml-auto btn text-neg"
+        onclick={() => (confirmReset ? onReset() : armReset())}
+        disabled={busy !== '' || endpoint.origin === 'env'}
+        title={confirmReset ? '再点一次立即删除页面配置' : '删除页面配置，回到环境变量'}
+      >
+        {busy === 'reset' ? '恢复中…' : confirmReset ? '确认恢复？' : '恢复环境变量'}
+      </button>
+      <button type="button" class="btn" onclick={ontoggle}>收起</button>
+    </div>
+
+    {#if flash}
+      <p class="mt-2 fs-115 text-pos">{flash}</p>
+    {/if}
+    {#if error}
+      <p class="mt-2 fs-115 text-neg" role="alert">{error}</p>
+    {/if}
+    {#if result}
+      <div class="mt-2 rounded-md border border-line bg-surface px-2.5 py-2 fs-115">
+        <p class={result.ok ? 'text-pos' : 'text-neg'}>
+          {result.ok ? '发送成功' : '发送失败'}
+          {#if result.status}
+            <span class="tnum ml-1.5 text-ink-3">HTTP {result.status} · {result.duration_ms}ms</span
+            >
+          {/if}
+          {#if result.error}<span class="ml-1.5">{result.error}</span>{/if}
+        </p>
+        {#if result.response}
+          <p class="mt-1 break-all text-ink-3">{result.response}</p>
         {/if}
       </div>
-    </Field>
-
-    <Field label="启用">
-      <label class="flex h-[30px] items-center gap-2 fs-125 text-ink-2">
-        <input
-          type="checkbox"
-          class="h-3.5 w-3.5 accent-[var(--gf-accent)]"
-          bind:checked={enabled}
-        />
-        {enabled ? '参与推送' : '不发送'}
-      </label>
-    </Field>
-
-    <Field label="配置 Key" hint="填了就用服务端已存配置">
-      <input class="field" bind:value={key} placeholder="例如 family" spellcheck="false" />
-    </Field>
-    <Field label="目标 URL" hint="Key 留空时必填，逗号/换行分隔">
-      <input
-        class="field"
-        bind:value={targets}
-        placeholder="tgram://bot/chat, mailto://…"
-        spellcheck="false"
-      />
-    </Field>
+    {/if}
   </div>
-
-  {#if endpoint.error}
-    <p class="mt-2 rounded-md bg-chip px-2 py-1.5 fs-115 text-neg">
-      现有配置有问题：{endpoint.error}
-    </p>
-  {/if}
-
-  <div class="mt-3 flex flex-wrap items-center gap-2">
-    <button type="button" class="btn btn-primary" onclick={onSave} disabled={busy !== ''}>
-      {busy === 'save' ? '保存中…' : '保存'}
-    </button>
-    <button type="button" class="btn" onclick={onSaveAndTest} disabled={busy !== ''}>
-      {busy === 'test' ? '发送中…' : '保存并测试'}
-    </button>
-    <button
-      type="button"
-      class="ml-auto btn text-neg"
-      onclick={() => (confirmReset ? onReset() : armReset())}
-      disabled={busy !== '' || endpoint.origin === 'env'}
-      title={confirmReset ? '再点一次立即删除页面配置' : '删除页面配置，回到环境变量'}
-    >
-      {busy === 'reset' ? '恢复中…' : confirmReset ? '确认恢复？' : '恢复环境变量'}
-    </button>
-  </div>
-
-  {#if flash}
-    <p class="mt-2 fs-115 text-pos">{flash}</p>
-  {/if}
-  {#if error}
-    <p class="mt-2 fs-115 text-neg">{error}</p>
-  {/if}
-  {#if result}
-    <div class="mt-2 rounded-md border border-line bg-surface-2 px-2.5 py-2 fs-115">
-      <p class={result.ok ? 'text-pos' : 'text-neg'}>
-        {result.ok ? '发送成功' : '发送失败'}
-        {#if result.status}
-          <span class="tnum ml-1.5 text-ink-3">HTTP {result.status} · {result.duration_ms}ms</span>
-        {/if}
-        {#if result.error}<span class="ml-1.5">{result.error}</span>{/if}
-      </p>
-      {#if result.response}
-        <p class="mt-1 break-all text-ink-3">{result.response}</p>
-      {/if}
-    </div>
-  {/if}
-</div>
+{/if}

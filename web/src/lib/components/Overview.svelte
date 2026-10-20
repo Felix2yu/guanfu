@@ -28,6 +28,7 @@
   import Icon from './Icon.svelte';
   import MetricCard from './MetricCard.svelte';
   import NoticeCard from './NoticeCard.svelte';
+  import Segmented from './Segmented.svelte';
   import SourceStatusCard from './SourceStatusCard.svelte';
   import TopBar from './TopBar.svelte';
   import TrendChart from './TrendChart.svelte';
@@ -47,6 +48,7 @@
   } = $props();
 
   const MODES: RangeMode[] = ['today', 'week', 'month', 'year'];
+  const MODE_OPTIONS = MODES.map((m) => ({ value: m, label: RANGE_LABELS[m] }));
 
   let mode = $state<RangeMode>('month');
   let data = $state<Overview | null>(null);
@@ -266,20 +268,13 @@
       </p>
     </div>
 
-    <div class="flex shrink-0 rounded-[10px] bg-chip p-[3px]" role="group" aria-label="时间范围">
-      {#each MODES as m (m)}
-        <button
-          type="button"
-          class="rounded-[7px] px-2.5 py-1.5 fs-125 transition-colors
-            {mode === m
-            ? 'bg-surface font-medium text-ink shadow-[0_1px_3px_rgba(27,29,34,0.08)]'
-            : 'text-ink-2 hover:text-ink'}"
-          onclick={() => (mode = m)}
-          aria-pressed={mode === m}
-        >
-          {RANGE_LABELS[m]}
-        </button>
-      {/each}
+    <div class="shrink-0">
+      <Segmented
+        label="时间范围"
+        options={MODE_OPTIONS}
+        value={mode}
+        onchange={(v) => (mode = v as RangeMode)}
+      />
     </div>
   </div>
 

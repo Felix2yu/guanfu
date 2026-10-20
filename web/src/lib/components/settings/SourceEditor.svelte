@@ -15,6 +15,7 @@
   import { untrack } from 'svelte';
   import Field from './Field.svelte';
   import Icon from '../Icon.svelte';
+  import Switch from '../Switch.svelte';
 
   let {
     endpoint,
@@ -190,7 +191,7 @@
   }
 </script>
 
-<div class="border-t border-line bg-surface-2 px-3 py-3">
+<div class="border-t border-line bg-surface-2 px-4 py-3">
   <div class="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2 lg:grid-cols-4">
     <Field
       label="端点地址"
@@ -254,21 +255,9 @@
     </Field>
 
     <Field label="启用">
-      <div class="flex h-[30px] items-center">
-        <input type="checkbox" class="peer sr-only" bind:checked={enabled} />
-        <span
-          aria-hidden="true"
-          class="relative h-[18px] w-[32px] rounded-full transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--gf-ink-3)] {enabled
-            ? 'bg-[var(--gf-accent)]'
-            : 'bg-[var(--gf-line-strong)]'}"
-        >
-          <span
-            class="absolute top-[2px] h-[14px] w-[14px] rounded-full shadow-sm transition-[left,background-color] {enabled
-              ? 'bg-[var(--gf-accent-ink)]'
-              : 'bg-[var(--gf-ink-2)]'}"
-            style:left={enabled ? '16px' : '2px'}
-          ></span>
-        </span>
+      <div class="flex h-[30px] items-center gap-2">
+        <Switch checked={enabled} label="参与同步" onchange={(v) => (enabled = v)} />
+        <span class="fs-11 text-ink-3">{enabled ? '已启用' : '已停用'}</span>
       </div>
     </Field>
   </div>
