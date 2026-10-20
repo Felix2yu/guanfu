@@ -13,7 +13,9 @@ func TestSealOpenRoundTrip(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	for _, plain := range []string{"k", "x-api-key-value", "用户名:密码", strings.Repeat("a", 4096)} {
+	// 明文都取「不可能随机撞进 base64」的长度：短明文（如单字符）会让
+	// Contains 断言变成掷硬币，只会在 CI 里随机翻车。
+	for _, plain := range []string{"x-api-key-value", "用户名:密码", strings.Repeat("a", 4096)} {
 		sealed, err := box.Seal(plain)
 		if err != nil {
 			t.Fatalf("Seal(%q): %v", plain, err)
@@ -31,6 +33,24 @@ func TestSealOpenRoundTrip(t *testing.T) {
 		if got != plain {
 			t.Fatalf("往返不一致: got %q want %q", got, plain)
 		}
+	}
+}
+
+func TestSealOpenRoundTripSingleByte(t *testing.T) {
+	box, err := FromPassphrase("hunter2")
+	if err != nil {
+		t.Fatal(err)
+	}
+	sealed, err := box.Seal("k")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got, err := box.Open(sealed)
+	if err != nil {
+		t.Fatalf("Open: %v", err)
+	}
+	if got != "k" {
+		t.Fatalf("往返不一致: got %q want %q", got, "k")
 	}
 }
 
