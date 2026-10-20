@@ -1,5 +1,5 @@
 <script lang="ts">
-  // 通知渠道编辑器（Unraid / Apprise）。
+  // 通知渠道编辑器（Apprise）。
   //
   // 测试发送打的是「已保存」的配置（后端按生效配置构造渠道），
   // 所以按钮写成「保存并测试」——避免用户改了地址点测试、实际测的是旧地址。
@@ -41,16 +41,15 @@
   let result = $state<NotifyResult | null>(null);
   let flash = $state('');
 
-  const isApprise = $derived(endpoint.name === 'apprise');
+  let confirmReset = $state(false);
+  let resetTimer: ReturnType<typeof setTimeout> | undefined;
 
   const secretPlaceholder = $derived(
     clearSecret
       ? '保存后凭据将被清除'
       : endpoint.secret_set
         ? `已设置 ${endpoint.secret_hint}（留空则不改）`
-        : endpoint.name === 'unraid'
-          ? '粘贴 Unraid API Key'
-          : '粘贴凭据（无鉴权可留空）'
+        : '粘贴凭据（无鉴权可留空）'
   );
 
   function applyEndpoint(e: EndpointView) {
@@ -73,11 +72,13 @@
     };
     if (secret) p.secret = secret;
     else if (clearSecret) p.secret = '';
-    if (isApprise) p.extras = { key: key.trim(), targets: targets.trim() };
+    p.extras = { key: key.trim(), targets: targets.trim() };
     return p;
   }
 
   async function save(): Promise<EndpointView | null> {
+    confirmReset = false;
+    clearTimeout(resetTimer);
     const v = await saveEndpoint(endpoint.name, payload());
     applyEndpoint(v);
     onsaved(v);
@@ -114,8 +115,17 @@
     }
   }
 
+  // 删除页面配置不可撤销：第一次点击只“上膛”，6 秒内再点才真正执行。
+  function armReset() {
+    confirmReset = true;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => (confirmReset = false), 6000);
+  }
+
   async function onReset() {
     busy = 'reset';
+    confirmReset = false;
+    clearTimeout(resetTimer);
     error = '';
     result = null;
     try {
@@ -133,9 +143,7 @@
 
 <div class="rounded-xl border border-line bg-surface p-3">
   <div class="mb-2 flex flex-wrap items-baseline gap-x-2 gap-y-1">
-    <h3 class="text-[13px] font-semibold text-ink">
-      {endpoint.name === 'unraid' ? 'Unraid' : 'Apprise'}
-    </h3>
+    <h3 class="text-[13px] font-semibold text-ink">Apprise</h3>
     <span class="tag">{endpoint.origin === 'page' ? '页面配置' : '环境变量'}</span>
     {#if endpoint.enabled && endpoint.base_url}
       <span class="text-[11px] text-pos">已启用</span>
@@ -146,16 +154,9 @@
   </div>
 
   <p class="mb-2.5 text-[11.5px] leading-relaxed text-ink-3">
-    {#if endpoint.name === 'unraid'}
-      Unraid 7 的 GraphQL 接口，地址填 <code class="rounded bg-chip px-1">http://tower</code> 或
-      <code class="rounded bg-chip px-1">http://tower/graphql</code>；API Key 在 Settings →
-      Management Access → API Keys 生成（需要通知写入权限）。通知会进 Unraid
-      通知中心，再由它自己的代理分发。
-    {:else}
-      Apprise API 或 Apprise-Go 的 <code class="rounded bg-chip px-1">/notify</code>。Key
-      是服务端已保存的配置名；留空则直接在下方写目标 URL（Apprise URL 形态，如
-      <code class="rounded bg-chip px-1">tgram://bot/chat</code>）。
-    {/if}
+    Apprise API 的 <code class="rounded bg-chip px-1">/notify</code>。Key
+    是服务端已保存的配置名；留空则直接在下方写目标 URL（Apprise URL 形态，如
+    <code class="rounded bg-chip px-1">tgram://bot/chat</code>）。
   </p>
 
   <div class="grid grid-cols-1 gap-x-4 gap-y-2.5 sm:grid-cols-2">
@@ -163,7 +164,7 @@
       <input class="field" bind:value={baseUrl} placeholder="http://host:port" spellcheck="false" />
     </Field>
 
-    <Field label="认证方式" hint={isApprise ? '自建实例通常无需凭据' : '默认 API Key 请求头'}>
+    <Field label="认证方式" hint="自建实例通常无需凭据">
       <select class="field" bind:value={auth}>
         {#each authModes as m (m)}
           <option value={m}>{AUTH_LABELS[m]}</option>
@@ -171,7 +172,7 @@
       </select>
     </Field>
 
-    <Field label="凭据" hint={endpoint.name === 'unraid' ? 'X-API-Key' : '随认证方式发送'}>
+    <Field label="凭据" hint="随认证方式发送">
       <div class="flex items-center gap-1.5">
         <input
           class="field min-w-0 flex-1"
@@ -181,17 +182,23 @@
           bind:value={secret}
           oninput={() => (clearSecret = false)}
         />
-        {#if endpoint.secret_set && !clearSecret}
-          <button
-            type="button"
-            class="btn shrink-0"
-            onclick={() => {
-              clearSecret = true;
-              secret = '';
-            }}
-          >
-            清除
-          </button>
+        {#if endpoint.secret_set}
+          {#if clearSecret}
+            <button type="button" class="btn-text shrink-0" onclick={() => (clearSecret = false)}>
+              撤销
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="btn-text shrink-0 btn-text-danger"
+              onclick={() => {
+                clearSecret = true;
+                secret = '';
+              }}
+            >
+              清除
+            </button>
+          {/if}
         {/if}
       </div>
     </Field>
@@ -207,19 +214,17 @@
       </label>
     </Field>
 
-    {#if isApprise}
-      <Field label="配置 Key" hint="填了就用服务端已存配置">
-        <input class="field" bind:value={key} placeholder="例如 family" spellcheck="false" />
-      </Field>
-      <Field label="目标 URL" hint="Key 留空时必填，逗号/换行分隔">
-        <input
-          class="field"
-          bind:value={targets}
-          placeholder="tgram://bot/chat, mailto://…"
-          spellcheck="false"
-        />
-      </Field>
-    {/if}
+    <Field label="配置 Key" hint="填了就用服务端已存配置">
+      <input class="field" bind:value={key} placeholder="例如 family" spellcheck="false" />
+    </Field>
+    <Field label="目标 URL" hint="Key 留空时必填，逗号/换行分隔">
+      <input
+        class="field"
+        bind:value={targets}
+        placeholder="tgram://bot/chat, mailto://…"
+        spellcheck="false"
+      />
+    </Field>
   </div>
 
   {#if endpoint.error}
@@ -229,19 +234,20 @@
   {/if}
 
   <div class="mt-3 flex flex-wrap items-center gap-2">
-    <button type="button" class="btn" onclick={onSave} disabled={busy !== ''}>
+    <button type="button" class="btn btn-primary" onclick={onSave} disabled={busy !== ''}>
       {busy === 'save' ? '保存中…' : '保存'}
     </button>
-    <button type="button" class="btn btn-primary" onclick={onSaveAndTest} disabled={busy !== ''}>
+    <button type="button" class="btn" onclick={onSaveAndTest} disabled={busy !== ''}>
       {busy === 'test' ? '发送中…' : '保存并测试'}
     </button>
     <button
       type="button"
-      class="btn"
-      onclick={onReset}
+      class="ml-auto btn text-neg"
+      onclick={() => (confirmReset ? onReset() : armReset())}
       disabled={busy !== '' || endpoint.origin === 'env'}
+      title={confirmReset ? '再点一次立即删除页面配置' : '删除页面配置，回到环境变量'}
     >
-      {busy === 'reset' ? '恢复中…' : '恢复环境变量'}
+      {busy === 'reset' ? '恢复中…' : confirmReset ? '确认恢复？' : '恢复环境变量'}
     </button>
   </div>
 

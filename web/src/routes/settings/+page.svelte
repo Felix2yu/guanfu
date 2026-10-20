@@ -25,6 +25,7 @@
   let error = $state('');
   let loading = $state(true);
   let editing = $state<string | null>(null);
+  let editorDirty = $state(false);
   let policyBusy = $state(false);
 
   onMount(() => {
@@ -56,13 +57,39 @@
   const configuredCount = $derived(sources.filter((s) => s.configured).length);
   const failing = $derived(sources.filter((s) => s.configured && s.last_error));
 
+  function refreshSources() {
+    void fetchSources()
+      .then((s) => (sources = s))
+      .catch(() => {});
+  }
+
   function replaceEndpoint(e: EndpointView) {
     if (!conf) return;
     conf = { ...conf, endpoints: conf.endpoints.map((x) => (x.name === e.name ? e : x)) };
     // 配置变了，同步状态里的 configured/interval 也要跟着刷新。
-    void fetchSources()
-      .then((s) => (sources = s))
-      .catch(() => {});
+    refreshSources();
+  }
+
+  function closeEditor() {
+    if (editorDirty && !window.confirm('有未保存的修改，收起后将丢失。确定收起？')) return;
+    editing = null;
+    editorDirty = false;
+  }
+
+  function toggleEditor(name: string) {
+    if (editing === name) {
+      closeEditor();
+      return;
+    }
+    if (
+      editing &&
+      editorDirty &&
+      !window.confirm('当前编辑有未保存的修改，切换后将丢失。确定切换？')
+    ) {
+      return;
+    }
+    editing = name;
+    editorDirty = false;
   }
 
   async function togglePolicy() {
@@ -235,7 +262,7 @@
                     type="button"
                     class="btn"
                     aria-expanded={editing === e.name}
-                    onclick={() => (editing = editing === e.name ? null : e.name)}
+                    onclick={() => toggleEditor(e.name)}
                   >
                     {editing === e.name ? '收起' : '编辑'}
                   </button>
@@ -248,7 +275,9 @@
                       endpoint={e}
                       authModes={conf?.auth_modes ?? []}
                       onsaved={replaceEndpoint}
-                      onclose={() => (editing = null)}
+                      onclose={closeEditor}
+                      onDirty={(d) => (editorDirty = d)}
+                      onsync={refreshSources}
                     />
                   </td>
                 </tr>

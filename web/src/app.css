@@ -191,6 +191,35 @@ body {
   }
 }
 
+/* 行内文字按钮：凭据「清除/撤销」这类不该和主按钮抢视觉的动作 */
+@utility btn-text {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 6px;
+  padding: 4px 6px;
+  font-size: 11.5px;
+  font-weight: 500;
+  color: var(--gf-ink-2);
+  transition: background-color 120ms;
+  &:hover:not(:disabled) {
+    background: var(--gf-chip);
+  }
+  &:focus-visible {
+    outline: 2px solid var(--gf-ink-3);
+    outline-offset: 2px;
+  }
+  &:disabled {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+}
+
+/* 行内文字按钮：危险动作（会丢数据） */
+@utility btn-text-danger {
+  color: var(--gf-neg);
+}
+
 /* 配置来源徽标：页面承接 vs 环境变量 */
 @utility tag {
   display: inline-flex;

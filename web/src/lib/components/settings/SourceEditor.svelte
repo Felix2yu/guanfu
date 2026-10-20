@@ -3,7 +3,7 @@
   //
   // 凭据三态：输入框有值 = 设置新值；点「清除」= 显式清空；两者都没有 = 保留原值。
   // 页面永远拿不到明文（后端只回掩码），所以不能把已存值回填到输入框里。
-  import { AUTH_LABELS, type AuthKind } from '#lib/api.ts';
+  import { AUTH_LABELS, triggerSync, type AuthKind } from '#lib/api.ts';
   import {
     resetEndpoint,
     saveEndpoint,
@@ -14,17 +14,22 @@
   } from '#lib/settings.ts';
   import { untrack } from 'svelte';
   import Field from './Field.svelte';
+  import Icon from '../Icon.svelte';
 
   let {
     endpoint,
     authModes,
     onsaved,
-    onclose
+    onclose,
+    onDirty = () => {},
+    onsync = () => {}
   }: {
     endpoint: EndpointView;
     authModes: AuthKind[];
     onsaved: (e: EndpointView) => void;
     onclose: () => void;
+    onDirty?: (dirty: boolean) => void;
+    onsync?: () => void;
   } = $props();
 
   // 表单是「编辑副本」：只在挂载时取一次 props，之后由用户输入驱动。
@@ -39,10 +44,32 @@
   let enabled = $state(init.enabled);
   let intervalMin = $state(init.interval_secs > 0 ? Math.round(init.interval_secs / 60) : 0);
 
-  let busy = $state<'' | 'save' | 'test' | 'reset'>('');
+  let baseline = $state({
+    baseUrl: init.base_url,
+    auth: init.auth,
+    enabled: init.enabled,
+    intervalMin: init.interval_secs > 0 ? Math.round(init.interval_secs / 60) : 0
+  });
+  const dirty = $derived(
+    baseUrl !== baseline.baseUrl ||
+      auth !== baseline.auth ||
+      enabled !== baseline.enabled ||
+      intervalMin !== baseline.intervalMin ||
+      secret !== '' ||
+      clearSecret
+  );
+
+  let busy = $state<'' | 'save' | 'test' | 'reset' | 'sync'>('');
   let error = $state('');
   let probe = $state<ProbeResult | null>(null);
   let flash = $state('');
+
+  let confirmReset = $state(false);
+  let resetTimer: ReturnType<typeof setTimeout> | undefined;
+
+  $effect(() => {
+    onDirty(dirty);
+  });
 
   const secretPlaceholder = $derived(
     clearSecret
@@ -59,6 +86,12 @@
     auth = e.auth;
     enabled = e.enabled;
     intervalMin = e.interval_secs > 0 ? Math.round(e.interval_secs / 60) : 0;
+    baseline = {
+      baseUrl: e.base_url,
+      auth: e.auth,
+      enabled: e.enabled,
+      intervalMin: e.interval_secs > 0 ? Math.round(e.interval_secs / 60) : 0
+    };
     secret = '';
     clearSecret = false;
   }
@@ -78,6 +111,8 @@
 
   async function save() {
     busy = 'save';
+    confirmReset = false;
+    clearTimeout(resetTimer);
     error = '';
     flash = '';
     try {
@@ -94,6 +129,8 @@
 
   async function test() {
     busy = 'test';
+    confirmReset = false;
+    clearTimeout(resetTimer);
     error = '';
     probe = null;
     try {
@@ -105,8 +142,38 @@
     }
   }
 
+  async function syncNow() {
+    error = '';
+    flash = '';
+    if (dirty) {
+      error = '有未保存的修改，请先保存再同步';
+      return;
+    }
+    busy = 'sync';
+    try {
+      await triggerSync(endpoint.name);
+      flash = '已触发同步，3 秒后刷新状态';
+      setTimeout(() => {
+        busy = '';
+        onsync();
+      }, 3000);
+    } catch (e) {
+      error = String(e);
+      busy = '';
+    }
+  }
+
+  // 删除页面配置不可撤销：第一次点击只“上膛”，6 秒内再点才真正执行。
+  function armReset() {
+    confirmReset = true;
+    clearTimeout(resetTimer);
+    resetTimer = setTimeout(() => (confirmReset = false), 6000);
+  }
+
   async function reset() {
     busy = 'reset';
+    confirmReset = false;
+    clearTimeout(resetTimer);
     error = '';
     flash = '';
     try {
@@ -151,17 +218,23 @@
           bind:value={secret}
           oninput={() => (clearSecret = false)}
         />
-        {#if endpoint.secret_set && !clearSecret}
-          <button
-            type="button"
-            class="btn shrink-0"
-            onclick={() => {
-              clearSecret = true;
-              secret = '';
-            }}
-          >
-            清除
-          </button>
+        {#if endpoint.secret_set}
+          {#if clearSecret}
+            <button type="button" class="btn-text shrink-0" onclick={() => (clearSecret = false)}>
+              撤销
+            </button>
+          {:else}
+            <button
+              type="button"
+              class="btn-text shrink-0 btn-text-danger"
+              onclick={() => {
+                clearSecret = true;
+                secret = '';
+              }}
+            >
+              清除
+            </button>
+          {/if}
         {/if}
       </div>
     </Field>
@@ -180,15 +253,23 @@
       </div>
     </Field>
 
-    <Field label="启用" hint="关闭后不参与调度，仍可用「测试」">
-      <label class="flex h-[30px] items-center gap-2 text-[12.5px] text-ink-2">
-        <input
-          type="checkbox"
-          class="h-3.5 w-3.5 accent-[var(--gf-accent)]"
-          bind:checked={enabled}
-        />
-        {enabled ? '参与调度' : '仅保留配置'}
-      </label>
+    <Field label="启用">
+      <div class="flex h-[30px] items-center">
+        <input type="checkbox" class="peer sr-only" bind:checked={enabled} />
+        <span
+          aria-hidden="true"
+          class="relative h-[18px] w-[32px] rounded-full transition-colors peer-focus-visible:outline-2 peer-focus-visible:outline-offset-2 peer-focus-visible:outline-[var(--gf-ink-3)] {enabled
+            ? 'bg-[var(--gf-accent)]'
+            : 'bg-[var(--gf-line-strong)]'}"
+        >
+          <span
+            class="absolute top-[2px] h-[14px] w-[14px] rounded-full shadow-sm transition-[left,background-color] {enabled
+              ? 'bg-[var(--gf-accent-ink)]'
+              : 'bg-[var(--gf-ink-2)]'}"
+            style:left={enabled ? '16px' : '2px'}
+          ></span>
+        </span>
+      </div>
     </Field>
   </div>
 
@@ -209,17 +290,41 @@
       disabled={busy !== '' || !baseUrl.trim()}
       title={baseUrl.trim() ? '' : '先填端点地址'}
     >
-      {busy === 'test' ? '测试中…' : '测试连通'}
+      <span class="hidden sm:inline">{busy === 'test' ? '测试中…' : '测试连通'}</span>
+      <span class="sm:hidden">{busy === 'test' ? '测试中' : '测试'}</span>
     </button>
     <button
       type="button"
       class="btn"
-      onclick={reset}
-      disabled={busy !== '' || endpoint.origin === 'env'}
+      onclick={syncNow}
+      disabled={busy !== '' || !baseUrl.trim() || !enabled}
+      title={!baseUrl.trim()
+        ? '先填端点地址'
+        : !enabled
+          ? '启用后才能同步'
+          : dirty
+            ? '先保存修改再同步'
+            : '立即触发一次同步'}
+      aria-label="立刻同步"
     >
-      {busy === 'reset' ? '恢复中…' : '恢复环境变量'}
+      <Icon name="sync" size={13} cls={busy === 'sync' ? 'animate-spin' : ''} />
+      <span class="hidden sm:inline">{busy === 'sync' ? '同步中…' : '立刻同步'}</span>
     </button>
-    <button type="button" class="ml-auto btn" onclick={onclose}>收起</button>
+    <button
+      type="button"
+      class="ml-auto btn text-neg"
+      onclick={() => (confirmReset ? reset() : armReset())}
+      disabled={busy !== '' || endpoint.origin === 'env'}
+      title={confirmReset ? '再点一次立即删除页面配置' : '删除页面配置，回到环境变量'}
+    >
+      <span class="hidden sm:inline">
+        {busy === 'reset' ? '恢复中…' : confirmReset ? '确认恢复？' : '恢复环境变量'}
+      </span>
+      <span class="sm:hidden">
+        {busy === 'reset' ? '恢复中' : confirmReset ? '确认恢复' : '恢复'}
+      </span>
+    </button>
+    <button type="button" class="btn" onclick={onclose}>收起</button>
   </div>
 
   {#if flash}
