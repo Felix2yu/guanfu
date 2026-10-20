@@ -54,7 +54,7 @@ func TestSettingsPayloadHasNoSecrets(t *testing.T) {
 	})
 	p := getSettings(t, srv)
 
-	if len(p.Data.Endpoints) != 3 { // 1 个源 + 2 个通知渠道
+	if len(p.Data.Endpoints) != 2 { // 1 个源 + 1 个通知渠道
 		t.Fatalf("端点数量不符: %d", len(p.Data.Endpoints))
 	}
 	if len(p.Data.AuthModes) == 0 {
@@ -234,21 +234,21 @@ func TestTestNotifyEndpoint(t *testing.T) {
 	var path string
 	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		path = r.URL.Path
-		_, _ = w.Write([]byte(`{"data":{"createNotification":{"id":"1"}}}`))
+		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
 	defer upstream.Close()
 
 	srv, _ := newTestServer(t, nil)
-	// 先保存 unraid 渠道配置。
-	rec := doJSON(t, srv, "PUT", "/api/v1/settings/endpoints/unraid", `{
-		"base_url": "`+upstream.URL+`", "auth": "api_key",
-		"secret": "u-key", "enabled": true
+	// 先保存 apprise 渠道配置。
+	rec := doJSON(t, srv, "PUT", "/api/v1/settings/endpoints/apprise", `{
+		"base_url": "`+upstream.URL+`", "auth": "none",
+		"enabled": true, "extras": {"key": "family"}
 	}`)
 	if rec.Code != http.StatusOK {
 		t.Fatalf("保存渠道失败: %d %s", rec.Code, rec.Body.String())
 	}
 
-	rec = doJSON(t, srv, "POST", "/api/v1/settings/notify/unraid/test", "")
+	rec = doJSON(t, srv, "POST", "/api/v1/settings/notify/apprise/test", "")
 	if rec.Code != http.StatusOK {
 		t.Fatalf("测试发送应 200: %d %s", rec.Code, rec.Body.String())
 	}
@@ -266,8 +266,8 @@ func TestTestNotifyEndpoint(t *testing.T) {
 	if !resp.Data.OK || resp.Data.Status != 200 {
 		t.Fatalf("测试发送结果不符: %+v", resp.Data)
 	}
-	if path != "/graphql" {
-		t.Fatalf("应打到 /graphql，实际 %q", path)
+	if path != "/notify/family" {
+		t.Fatalf("应打到 /notify/family，实际 %q", path)
 	}
 
 	// 未知渠道：404 而不是 500。

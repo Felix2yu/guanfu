@@ -59,7 +59,7 @@ func TestEndpointConfigListAndDelete(t *testing.T) {
 	s := openTest(t)
 	_ = s.SaveEndpointConfig(EndpointConfig{Name: "huozhi", Kind: KindSource, Enabled: true})
 	_ = s.SaveEndpointConfig(EndpointConfig{Name: "immich", Kind: KindSource, Enabled: true})
-	_ = s.SaveEndpointConfig(EndpointConfig{Name: "unraid", Kind: KindNotify, Enabled: true})
+	_ = s.SaveEndpointConfig(EndpointConfig{Name: "apprise", Kind: KindNotify, Enabled: true})
 
 	all, err := s.ListEndpointConfigs("")
 	if err != nil {
@@ -69,7 +69,7 @@ func TestEndpointConfigListAndDelete(t *testing.T) {
 		t.Fatalf("应列出 3 条，得到 %d", len(all))
 	}
 	// 排序稳定（按 name 升序），前端表格不必自己排。
-	if all[0].Name != "huozhi" || all[1].Name != "immich" || all[2].Name != "unraid" {
+	if all[0].Name != "apprise" || all[1].Name != "huozhi" || all[2].Name != "immich" {
 		t.Fatalf("排序不符: %v", []string{all[0].Name, all[1].Name, all[2].Name})
 	}
 
@@ -78,7 +78,7 @@ func TestEndpointConfigListAndDelete(t *testing.T) {
 		t.Fatalf("kind 过滤失效: %d", len(src))
 	}
 	ntf, _ := s.ListEndpointConfigs(KindNotify)
-	if len(ntf) != 1 || ntf[0].Name != "unraid" {
+	if len(ntf) != 1 || ntf[0].Name != "apprise" {
 		t.Fatalf("kind=notify 过滤失效: %+v", ntf)
 	}
 

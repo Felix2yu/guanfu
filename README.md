@@ -107,10 +107,9 @@ cd web && pnpm install && pnpm dev
 | `QINGYE_BASE_URL` | — | 青野集园艺（植物日记 + 养护记录；REST 零鉴权，**无需 key**） |
 | `<源>_AUTH` | 按源推断 | 认证方式：`none`/`api_key`/`bearer`/`basic`/`jwt`/`token`，默认见下 |
 | `GUANFU_SECRET_KEY` | 自动生成 | 设置页凭据的加密密钥；缺省用 `<GUANFU_DB>.key`（自动创建，0600） |
-| `UNRAID_BASE_URL` / `UNRAID_API_KEY` | — | Unraid 通知（GraphQL `createNotification`，`X-API-Key`） |
-| `UNRAID_AUTH` / `UNRAID_ENABLED` | `api_key` / 按地址推断 | 渠道鉴权方式与启用开关 |
 | `APPRISE_BASE_URL` / `APPRISE_KEY` | — | Apprise 通知（有 Key 走 `POST /notify/{key}`，否则 `POST /notify` + `urls`） |
 | `APPRISE_TARGETS` / `APPRISE_API_KEY` | — | 无 Key 模式的目标 URL 列表（空格/逗号/换行分隔）、渠道鉴权凭据 |
+| `APPRISE_AUTH` / `APPRISE_ENABLED` | `none` / 按地址推断 | 渠道鉴权方式与启用开关 |
 
 各源**配了 BaseURL 即自动启用**（`<NAME>_ENABLED=0` 可显式关闭）；默认回溯天数：mujian 365 / diarum 365 / zhichang 30 / dawarich 30 / bili-history 90 / immich 365（可用 `<NAME>_LOOKBACK_DAYS` 覆盖）。
 
@@ -128,7 +127,7 @@ cd web && pnpm install && pnpm dev
 - **「恢复环境变量」= 删除该行**：删掉页面配置，端点立刻回到 env 的值。
 - **保存即生效**：该源的适配器按新配置重建并重新调度，**不需要重启进程**
   （env 改动仍然需要重启，因为配置在启动时读取）。
-- 通知渠道（Unraid / Apprise）走同一套合并逻辑，同样支持整块覆盖与恢复。
+- 通知渠道（Apprise）走同一套合并逻辑，同样支持整块覆盖与恢复。
 
 页面写入的凭据以 AES-256-GCM 密文落库（`enc:v1:` 前缀 + base64），接口只回末 4 位掩码，
 明文不会经过浏览器；密钥优先取 `GUANFU_SECRET_KEY`，否则用数据目录下的 `guanfu.db.key`
@@ -144,7 +143,7 @@ internal/
   store/            SQLite：events（幂等 upsert）+ sources（游标/状态）+ endpoint_config/app_setting
   secret/           AES-256-GCM 凭据加解密与掩码（密钥 env 优先，否则落 0600 文件）
   settings/         配置合并层：env 基线 ← 页面覆盖 → 生效快照（+ 探测、热重建回调）
-  notify/           通知分发：Unraid GraphQL / Apprise，含去重窗口与失败聚合
+  notify/           通知分发：Apprise（兼容 Apprise API），含去重窗口与失败聚合
   sync/             调度引擎：每源独立 ticker + 手动触发 + 失败隔离 + 热重建
   sources/          数据源适配器（huozhi/mujian/diarum/immich/zhichang/dawarich/bili-history/qiansi/shenshi/liuxia/qingye）
   api/              REST API（/api/v1/events 等）+ 媒体代理 + 设置页接口
@@ -183,7 +182,7 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设�
 | PUT | `/api/v1/settings/endpoints/{name}` | 保存端点（`base_url`/`auth`/`secret`/`enabled`/`interval_secs`/`extras`）；`secret` 不传=保留，传空串=清空 |
 | DELETE | `/api/v1/settings/endpoints/{name}` | 删除页面配置（= 恢复环境变量），返回删除后的视图 |
 | POST | `/api/v1/settings/endpoints/{name}/verify` | 用表单草稿探测地址+认证（未保存也能测）；连不通/认证拒绝仍返回 200 + `ok:false` |
-| POST | `/api/v1/settings/notify/{name}/test` | 测试发送（`unraid`/`apprise`），上游失败同样 200，带 `status`/`response`/`error` |
+| POST | `/api/v1/settings/notify/apprise/test` | 测试发送，上游失败同样 200，带 `status`/`response`/`error` |
 | PUT | `/api/v1/settings/policy` | 开关项（目前只有 `notify_on_sync_failure`） |
 | GET | `/api/v1/export?from&to&format=json` | 全量或区间导出（流式 JSON，防锁定；页面右上「导出」按钮即此端点） |
 | POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
@@ -204,7 +203,7 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设�
 
 `/settings` 设置页：外观三选（跟随系统 / 浅色 / 深色）+ **可编辑**的数据源总览
 （行内展开改地址 / 认证方式 / 凭据 / 间隔 / 启用，带「保存」「测试连通」「恢复环境变量」）
-+ 通知渠道双卡（Unraid / Apprise，含「保存并测试」）+ 同步失败推送开关。
++ 通知渠道卡（Apprise，含「保存并测试」）+ 同步失败推送开关。
 表格行首徽标标明配置来源（`页面` / `env`）。明暗走
 `<html class="dark">`，`app.html` 里一段内联脚本在首屏前定色，避免深色模式白闪。
 窄屏（<768px）收起端点 / 认证 / 凭据 / 间隔列，只留「源 · 状态 · 编辑」，避免要横向滑动才能点到编辑。
@@ -290,12 +289,10 @@ guanfu mcp
 
 ## 通知
 
-两个渠道，可在设置页配置地址 / 认证 / 凭据 / 启用，也支持环境变量（页面优先）：
+一个渠道，可在设置页配置地址 / 认证 / 凭据 / 启用，也支持环境变量（页面优先）：
 
-- **Unraid**：走 Unraid 7 的 GraphQL，`POST /graphql` 的 `createNotification` mutation。
-  标题进 `title` + `subject`，严重级别映射到 `importance`（info→`NORMAL`、warning→`WARNING`、alert→`ALERT`）。
-  注意 **HTTP 200 不代表成功**——GraphQL 会带 `errors[]`，那也判失败。
-- **Apprise**：`POST /notify/{key}`（Key 模式）或 `POST /notify` + `urls` 列表（Targets 模式）。
+- **Apprise**（兼容 Apprise API）：`POST /notify/{key}`（Key 模式）
+  或 `POST /notify` + `urls` 列表（Targets 模式）。
   观复的 info/warning/alert 映射为 Apprise 的 `info`/`warning`/`failure`；
   返回体 `success:false` 判失败。
 

@@ -176,7 +176,7 @@ func (m *Manager) rebuild() error {
 		eff.Sources[name] = sc
 	}
 
-	// 两个渠道名是固定的：基线里没有也要补上，否则页面保存的渠道配置
+	// 渠道名是固定的：基线里没有也要补上，否则页面保存的渠道配置
 	// 会被"生效配置里没这个键"吞掉（列表能看到、保存却没效果）。
 	for _, name := range m.notifyNames() {
 		if _, ok := eff.Notify.Channels[name]; !ok {
@@ -238,7 +238,7 @@ func (m *Manager) sourceNames() []string {
 }
 
 func (m *Manager) notifyNames() []string {
-	return []string{config.NotifyUnraid, config.NotifyApprise}
+	return []string{config.NotifyApprise}
 }
 
 // kindOf 判断名字属于哪类端点；未知返回 false（挡住随意写入）。
@@ -247,7 +247,7 @@ func (m *Manager) kindOf(name string) (string, bool) {
 		return store.KindSource, true
 	}
 	switch name {
-	case config.NotifyUnraid, config.NotifyApprise:
+	case config.NotifyApprise:
 		return store.KindNotify, true
 	}
 	return "", false
@@ -298,7 +298,7 @@ func (m *Manager) List() []EndpointView {
 			Name: name, Kind: store.KindNotify,
 			Origin:  OriginEnv,
 			BaseURL: ch.BaseURL, EnvBaseURL: m.base.Notify.Channel(name).BaseURL,
-			Auth: ch.Auth, DefaultAuth: defaultNotifyAuth(name),
+			Auth: ch.Auth, DefaultAuth: defaultNotifyAuth(),
 			CredentialEnv: strings.ToUpper(name) + "_API_KEY",
 			SecretSet:     ch.Token != "", SecretOrigin: OriginEnv,
 			Enabled: ch.Enabled,
@@ -306,7 +306,7 @@ func (m *Manager) List() []EndpointView {
 			Error:   problems[name],
 		}
 		if v.Auth == "" {
-			v.Auth = defaultNotifyAuth(name)
+			v.Auth = defaultNotifyAuth()
 		}
 		if ch.Token != "" {
 			v.SecretHint = secret.Mask(ch.Token)
@@ -323,10 +323,7 @@ func (m *Manager) List() []EndpointView {
 	return out
 }
 
-func defaultNotifyAuth(name string) string {
-	if name == config.NotifyUnraid {
-		return config.AuthAPIKey
-	}
+func defaultNotifyAuth() string {
 	return config.AuthNone
 }
 

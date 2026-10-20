@@ -208,7 +208,7 @@ func main() {
 	if chans := mgr.Effective().Notify.EnabledChannels(); len(chans) > 0 {
 		log.Printf("通知渠道已启用: %s（同步失败推送 %s）", strings.Join(chans, " "), onOff(mgr.Policy().NotifyOnSyncFailure))
 	} else {
-		log.Printf("通知渠道未启用（可在设置页配置 Unraid / Apprise）")
+		log.Printf("通知渠道未启用（可在设置页配置 Apprise）")
 	}
 
 	go func() {

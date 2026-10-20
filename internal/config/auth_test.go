@@ -104,39 +104,33 @@ func TestAuthModeFallsBackOnInvalid(t *testing.T) {
 }
 
 func TestNotifyEnvFallback(t *testing.T) {
-	t.Setenv("UNRAID_BASE_URL", "http://tower/graphql/")
-	t.Setenv("UNRAID_API_KEY", "u-key")
-	t.Setenv("UNRAID_ENABLED", "")
-	t.Setenv("APPRISE_BASE_URL", "")
+	t.Setenv("APPRISE_BASE_URL", "http://apprise/")
+	t.Setenv("APPRISE_API_KEY", "a-key")
 	t.Setenv("APPRISE_KEY", "family")
+	t.Setenv("APPRISE_ENABLED", "")
 
 	n := loadNotify()
-	u := n.Channel(NotifyUnraid)
-	if u.BaseURL != "http://tower/graphql" {
-		t.Fatalf("末尾斜杠应被裁掉: %q", u.BaseURL)
+	a := n.Channel(NotifyApprise)
+	if a.BaseURL != "http://apprise" {
+		t.Fatalf("末尾斜杠应被裁掉: %q", a.BaseURL)
 	}
-	if !u.Enabled {
+	if !a.Enabled {
 		t.Fatal("配了地址应默认启用")
 	}
-	if u.Token != "u-key" {
-		t.Fatalf("token 未读到: %q", u.Token)
+	if a.Token != "a-key" {
+		t.Fatalf("token 未读到: %q", a.Token)
 	}
-	if got := n.EnabledChannels(); len(got) != 1 || got[0] != NotifyUnraid {
+	if got := n.EnabledChannels(); len(got) != 1 || got[0] != NotifyApprise {
 		t.Fatalf("启用渠道列表不符: %v", got)
-	}
-
-	// 显式关闭优先于「配了地址即启用」。
-	t.Setenv("UNRAID_ENABLED", "0")
-	if loadNotify().Channel(NotifyUnraid).Enabled {
-		t.Fatal("UNRAID_ENABLED=0 应强制关闭")
-	}
-
-	a := loadNotify().Channel(NotifyApprise)
-	if a.Enabled {
-		t.Fatal("没配地址的渠道不该启用")
 	}
 	if a.Key != "family" {
 		t.Fatalf("apprise key 未读到: %q", a.Key)
+	}
+
+	// 显式关闭优先于「配了地址即启用」。
+	t.Setenv("APPRISE_ENABLED", "0")
+	if loadNotify().Channel(NotifyApprise).Enabled {
+		t.Fatal("APPRISE_ENABLED=0 应强制关闭")
 	}
 }
 

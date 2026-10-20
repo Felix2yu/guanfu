@@ -23,102 +23,6 @@ func readBody(t *testing.T, r *http.Request) string {
 	return string(b)
 }
 
-func TestUnraidSendShape(t *testing.T) {
-	var gotPath, gotKey, gotBody string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		gotPath = r.URL.Path
-		gotKey = r.Header.Get("X-API-Key")
-		gotBody = readBody(t, r)
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"data":{"createNotification":{"id":"n1"}}}`))
-	}))
-	defer srv.Close()
-
-	ch := newUnraid(config.NotifyChannel{
-		Name: config.NotifyUnraid, BaseURL: srv.URL, Token: "u-key",
-	}, srv.Client())
-
-	res, err := ch.Send(context.Background(), Message{
-		Title: "同步失败", Body: "huozhi 401", Priority: PriorityAlert,
-	})
-	if err != nil {
-		t.Fatalf("发送失败: %v", err)
-	}
-	if !res.OK || res.Status != 200 {
-		t.Fatalf("结果不符: %+v", res)
-	}
-	if gotPath != "/graphql" {
-		t.Fatalf("路径应为 /graphql，得到 %q", gotPath)
-	}
-	if gotKey != "u-key" {
-		t.Fatalf("X-API-Key 未带上: %q", gotKey)
-	}
-	for _, want := range []string{"createNotification", "同步失败", "huozhi 401", "ALERT"} {
-		if !strings.Contains(gotBody, want) {
-			t.Errorf("请求体缺少 %q: %s", want, gotBody)
-		}
-	}
-}
-
-func TestUnraidEndpointWithGraphqlSuffix(t *testing.T) {
-	var path string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		path = r.URL.Path
-		_, _ = w.Write([]byte(`{"data":{}}`))
-	}))
-	defer srv.Close()
-
-	ch := newUnraid(config.NotifyChannel{Name: config.NotifyUnraid, BaseURL: srv.URL + "/graphql/"}, srv.Client())
-	if _, err := ch.Send(context.Background(), Message{Title: "t"}); err != nil {
-		t.Fatal(err)
-	}
-	if path != "/graphql" {
-		t.Fatalf("重复拼 /graphql: %q", path)
-	}
-}
-
-func TestUnraidGraphQLErrorIsFailure(t *testing.T) {
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		// HTTP 200 + errors：最容易误判成成功的一种。
-		_, _ = w.Write([]byte(`{"errors":[{"message":"Not authorized"}]}`))
-	}))
-	defer srv.Close()
-
-	ch := newUnraid(config.NotifyChannel{Name: config.NotifyUnraid, BaseURL: srv.URL}, srv.Client())
-	res, err := ch.Send(context.Background(), Message{Title: "t"})
-	if err == nil {
-		t.Fatal("GraphQL errors 必须报错")
-	}
-	if res.OK {
-		t.Fatal("结果不能标记成功")
-	}
-	if !strings.Contains(res.Error, "Not authorized") {
-		t.Fatalf("错误信息应带上游文案: %q", res.Error)
-	}
-}
-
-func TestUnraidAuthModes(t *testing.T) {
-	var auth string
-	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		auth = r.Header.Get("Authorization")
-		if r.Header.Get("X-API-Key") != "" {
-			t.Errorf("bearer 模式不该再发 X-API-Key")
-		}
-		_, _ = w.Write([]byte(`{"data":{}}`))
-	}))
-	defer srv.Close()
-
-	ch := newUnraid(config.NotifyChannel{
-		Name: config.NotifyUnraid, BaseURL: srv.URL, Auth: config.AuthBearer, Token: "tok",
-	}, srv.Client())
-	if _, err := ch.Send(context.Background(), Message{Title: "t"}); err != nil {
-		t.Fatal(err)
-	}
-	if auth != "Bearer tok" {
-		t.Fatalf("bearer 头不符: %q", auth)
-	}
-}
-
 func TestAppriseWithKey(t *testing.T) {
 	var path, body string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
@@ -191,33 +95,37 @@ func TestAppriseHTTPSuccessFalse(t *testing.T) {
 }
 
 func TestDispatcherOnlyEnabledChannels(t *testing.T) {
-	var unraidHits, appriseHits int32
-	unraid := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&unraidHits, 1)
-		_, _ = w.Write([]byte(`{"data":{}}`))
-	}))
-	defer unraid.Close()
-	apprise := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		atomic.AddInt32(&appriseHits, 1)
+	var hits int32
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		atomic.AddInt32(&hits, 1)
 		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
-	defer apprise.Close()
+	defer srv.Close()
 
 	cfg := config.NotifyConfig{Channels: map[string]config.NotifyChannel{
-		config.NotifyUnraid:  {Name: config.NotifyUnraid, BaseURL: unraid.URL, Enabled: true},
-		config.NotifyApprise: {Name: config.NotifyApprise, BaseURL: apprise.URL, Enabled: false, Key: "k"},
+		config.NotifyApprise: {Name: config.NotifyApprise, BaseURL: srv.URL, Enabled: false, Key: "k"},
 	}}
 	d := NewDispatcher(func() config.NotifyConfig { return cfg })
 
+	if _, err := d.Send(context.Background(), Message{Title: "t"}, ""); err == nil {
+		t.Fatal("没有启用的渠道应报错")
+	}
+	if hits != 0 {
+		t.Fatalf("未启用的渠道不该发送，命中 %d 次", hits)
+	}
+
+	cfg.Channels[config.NotifyApprise] = config.NotifyChannel{
+		Name: config.NotifyApprise, BaseURL: srv.URL, Enabled: true, Key: "k",
+	}
 	results, err := d.Send(context.Background(), Message{Title: "t"}, "")
 	if err != nil {
 		t.Fatalf("发送失败: %v", err)
 	}
-	if len(results) != 1 || results[0].Channel != config.NotifyUnraid {
-		t.Fatalf("只应发给启用的渠道: %+v", results)
+	if len(results) != 1 || results[0].Channel != config.NotifyApprise {
+		t.Fatalf("应只发给启用的渠道: %+v", results)
 	}
-	if unraidHits != 1 || appriseHits != 0 {
-		t.Fatalf("命中次数不符 unraid=%d apprise=%d", unraidHits, appriseHits)
+	if hits != 1 {
+		t.Fatalf("命中次数不符: %d", hits)
 	}
 }
 
@@ -225,12 +133,12 @@ func TestDispatcherDedupeWindow(t *testing.T) {
 	var hits int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		atomic.AddInt32(&hits, 1)
-		_, _ = w.Write([]byte(`{"data":{}}`))
+		_, _ = w.Write([]byte(`{"success":true}`))
 	}))
 	defer srv.Close()
 
 	cfg := config.NotifyConfig{Channels: map[string]config.NotifyChannel{
-		config.NotifyUnraid: {Name: config.NotifyUnraid, BaseURL: srv.URL, Enabled: true},
+		config.NotifyApprise: {Name: config.NotifyApprise, BaseURL: srv.URL, Enabled: true, Key: "k"},
 	}}
 	d := NewDispatcher(func() config.NotifyConfig { return cfg })
 	d.SetWindow(time.Hour)
@@ -264,10 +172,10 @@ func TestDispatcherDedupeWindow(t *testing.T) {
 
 func TestDispatcherTestUnconfigured(t *testing.T) {
 	cfg := config.NotifyConfig{Channels: map[string]config.NotifyChannel{
-		config.NotifyUnraid: {Name: config.NotifyUnraid}, // 没地址
+		config.NotifyApprise: {Name: config.NotifyApprise}, // 没地址
 	}}
 	d := NewDispatcher(func() config.NotifyConfig { return cfg })
-	if _, err := d.Test(context.Background(), config.NotifyUnraid); err == nil {
+	if _, err := d.Test(context.Background(), config.NotifyApprise); err == nil {
 		t.Fatal("未配置地址时测试发送应报错")
 	}
 	// 未知渠道也要明确报错，而不是 panic。
@@ -284,7 +192,7 @@ func TestDispatcherAggregatesErrors(t *testing.T) {
 	defer bad.Close()
 
 	cfg := config.NotifyConfig{Channels: map[string]config.NotifyChannel{
-		config.NotifyUnraid: {Name: config.NotifyUnraid, BaseURL: bad.URL, Enabled: true},
+		config.NotifyApprise: {Name: config.NotifyApprise, BaseURL: bad.URL, Enabled: true, Key: "k"},
 	}}
 	d := NewDispatcher(func() config.NotifyConfig { return cfg })
 	results, err := d.Send(context.Background(), Message{Title: "t"}, "")

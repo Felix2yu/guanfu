@@ -7,7 +7,6 @@ import (
 
 // 通知渠道名。与 endpoint_config 里的 name 一致，前端按名字找。
 const (
-	NotifyUnraid  = "unraid"
 	NotifyApprise = "apprise"
 )
 
@@ -15,8 +14,7 @@ const (
 type NotifyChannel struct {
 	Name    string
 	BaseURL string
-	// Auth 认证方式，取值同数据源。Unraid 默认 api_key（X-API-Key），
-	// Apprise 默认 none（多数自建实例不带鉴权）。
+	// Auth 认证方式，取值同数据源。Apprise 默认 none（多数自建实例不带鉴权）。
 	Auth    string
 	Token   string
 	Enabled bool
@@ -52,7 +50,7 @@ func (n NotifyConfig) Channel(name string) NotifyChannel {
 // EnabledChannels 返回已启用的渠道名（供启动日志与调度判断）。
 func (n NotifyConfig) EnabledChannels() []string {
 	out := make([]string, 0, len(n.Channels))
-	for _, name := range []string{NotifyUnraid, NotifyApprise} {
+	for _, name := range []string{NotifyApprise} {
 		if c := n.Channel(name); c.Enabled && c.BaseURL != "" {
 			out = append(out, name)
 		}
@@ -64,15 +62,6 @@ func (n NotifyConfig) EnabledChannels() []string {
 // 与数据源同一套「配了地址即自动启用，可用 *_ENABLED=0 显式关」规则。
 func loadNotify() NotifyConfig {
 	n := NotifyConfig{Channels: map[string]NotifyChannel{}}
-
-	unraidBase := strings.TrimRight(os.Getenv("UNRAID_BASE_URL"), "/")
-	n.Channels[NotifyUnraid] = NotifyChannel{
-		Name:    NotifyUnraid,
-		BaseURL: unraidBase,
-		Auth:    strings.ToLower(strings.TrimSpace(os.Getenv("UNRAID_AUTH"))),
-		Token:   os.Getenv("UNRAID_API_KEY"),
-		Enabled: notifyEnabled("UNRAID", unraidBase != ""),
-	}
 
 	appriseBase := strings.TrimRight(os.Getenv("APPRISE_BASE_URL"), "/")
 	n.Channels[NotifyApprise] = NotifyChannel{

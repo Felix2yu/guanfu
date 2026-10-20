@@ -29,7 +29,7 @@ type Config struct {
 	// 各数据源配置。缺省时对应源标记为未配置（enabled=false 且无凭据），
 	// 同步会记录 last_error 而不是崩溃。
 	Sources map[string]SourceConfig
-	// 通知渠道配置（Unraid / Apprise）。同样可被页面配置整块覆盖。
+	// 通知渠道配置（Apprise）。同样可被页面配置整块覆盖。
 	Notify NotifyConfig
 }
 

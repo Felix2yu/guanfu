@@ -12,7 +12,7 @@ import (
 	"github.com/Felix2yu/guanfu/internal/config"
 )
 
-// Apprise Apprise API / Apprise-Go 通知渠道。
+// Apprise Apprise API 通知渠道。
 //
 // 两种调用形态（都是 Apprise API 的正式用法）：
 //

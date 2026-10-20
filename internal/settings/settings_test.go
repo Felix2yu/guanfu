@@ -21,7 +21,6 @@ func baseConfig() *config.Config {
 			"immich": {Name: "immich", Enabled: false},
 		},
 		Notify: config.NotifyConfig{Channels: map[string]config.NotifyChannel{
-			config.NotifyUnraid:  {Name: config.NotifyUnraid},
 			config.NotifyApprise: {Name: config.NotifyApprise},
 		}},
 	}

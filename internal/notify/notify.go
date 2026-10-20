@@ -1,10 +1,8 @@
 // Package notify 负责把观复的事件推送到外部通知渠道。
 //
-// 目前两个渠道：
+// 目前一个渠道：
 //
-//	unraid  —— Unraid 7 的 GraphQL `createNotification`，进系统通知中心，
-//	           再由 Unraid 自己的通知代理（邮件/Discord/…）分发；
-//	apprise —— Apprise API（含 Apprise-Go）的 `/notify`，一次打给 N 个目标。
+//	apprise —— Apprise API 的 `/notify`，一次打给 N 个目标。
 //
 // 设计取舍：渠道只管「把一条消息发出去并如实回报结果」，不吞异常。
 // 设置页的「测试发送」需要看到上游真实状态码与响应体，否则配错了只能靠猜。
@@ -164,8 +162,6 @@ func build(c config.NotifyChannel, client *http.Client) (Channel, error) {
 		return nil, fmt.Errorf("%s 未配置地址", c.Name)
 	}
 	switch c.Name {
-	case config.NotifyUnraid:
-		return newUnraid(c, client), nil
 	case config.NotifyApprise:
 		return newApprise(c, client), nil
 	default:
