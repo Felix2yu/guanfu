@@ -23,6 +23,13 @@ func collect() (func(*model.Event) error, *[]*model.Event) {
 	}, &got
 }
 
+// m4Today 按观复本地时区算「今天」，与各源 Sync 里的 time.Now().In(loc) 同源。
+// 直接用 time.Now() 取的是进程本地时区，UTC runner 会在北京时间 00:00–08:00
+// 窗口比生产侧少一天，cursor 断言每逢周五 00:00 依赖批次必挂。
+func m4Today() string {
+	return time.Now().In(model.LocalLocation()).Format("2006-01-02")
+}
+
 // ---------- qiansi ----------
 
 // qiansiFixture 模拟牵丝：events 分两页（第一页满 200 触发翻页），
@@ -90,7 +97,7 @@ func TestQiansiSyncMappingAndPaging(t *testing.T) {
 	if n != 3 || len(*got) != 3 {
 		t.Fatalf("应产出 3 条事件（社交+礼金+纪念日），实际 %d", n)
 	}
-	want := time.Now().Format("2006-01-02")
+	want := m4Today()
 	if cursor != want {
 		t.Fatalf("cursor 应为今天 %s，实际 %s", want, cursor)
 	}
@@ -190,8 +197,8 @@ func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
 			// 第一条是空壳（上游缺记录时的形态），必须跳过。
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"reviews": []map[string]any{
-					{"id": 0, "date": time.Now().Format("2006-01-02")},
-					{"id": 5, "date": time.Now().Format("2006-01-02"), "mood": "平静",
+					{"id": 0, "date": m4Today()},
+					{"id": 5, "date": m4Today(), "mood": "平静",
 						"wins": "完成了三源适配器", "blockers": "沙箱代理不稳", "tomorrow": "跑真实同步"},
 				},
 			})
@@ -199,7 +206,7 @@ func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
 			if r.URL.Query().Get("includeArchived") != "1" {
 				t.Errorf("习惯看板应含归档：%q", r.URL.RawQuery)
 			}
-			today := time.Now().Format("2006-01-02")
+			today := m4Today()
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"from": r.URL.Query().Get("from"), "to": r.URL.Query().Get("to"), "today": today,
 				"habits": []map[string]any{{"id": 1, "name": "晨跑"}, {"id": 2, "name": "阅读"}},
@@ -254,7 +261,7 @@ func TestShenshiSyncTaskReviewHabit(t *testing.T) {
 	}
 
 	// 复盘：空壳跳过，有内容的入库（全天）。
-	today := time.Now().Format("2006-01-02")
+	today := m4Today()
 	rv := byID["review:"+today]
 	if rv == nil {
 		t.Fatalf("缺少当日复盘，实际 %v", byID)
@@ -298,7 +305,7 @@ func liuxiaFixture(t *testing.T, seen *[]string) *httptest.Server {
 		if r.URL.Query().Get("format") != "json" {
 			t.Errorf("应请求 json 格式：%q", r.URL.RawQuery)
 		}
-		day := time.Now().Format("2006-01-02")
+		day := m4Today()
 		// 裸数组；quality/aod 是指针可空。
 		_ = json.NewEncoder(w).Encode([]map[string]any{
 			{"id": 1, "city": "上海", "date": day, "time": "05:42", "event_type": "morning", "model": "EC", "quality": 0.415, "aod": 0.18},
@@ -315,7 +322,7 @@ func TestLiuxiaSyncAggregatesByDay(t *testing.T) {
 	srv := liuxiaFixture(t, &seen)
 	src := NewLiuxiaSource(config.SourceConfig{BaseURL: srv.URL, LookbackDays: 30, Interval: 6 * time.Hour})
 	upsert, got := collect()
-	today := time.Now().Format("2006-01-02")
+	today := m4Today()
 	cursor, n, err := src.Sync(context.Background(), "", upsert)
 	if err != nil {
 		t.Fatalf("Sync 失败: %v", err)
