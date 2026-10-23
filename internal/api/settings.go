@@ -4,10 +4,12 @@ import (
 	"encoding/json"
 	"errors"
 	"io"
+	"log"
 	"net/http"
 
 	"github.com/Felix2yu/guanfu/internal/config"
 	"github.com/Felix2yu/guanfu/internal/settings"
+	"github.com/Felix2yu/guanfu/internal/sync"
 )
 
 // maxSettingsBody 配置请求体上限：这几个接口收的都是短字段，1MB 足够，
@@ -56,6 +58,12 @@ func (s *Server) handleSaveEndpoint(w http.ResponseWriter, r *http.Request) {
 		writeSettingsErr(w, err)
 		return
 	}
+	// 保存只同步被改动的这一个源：Reconfigure 重建整批调度时不再追加同步，
+	// 否则改一个源等于把全部源都打一遍（页面看起来就像"点了全局同步"）。
+	// 未启用/未注册的源名 Trigger 会拒收，这里不必当错误——保存本身已经成功。
+	if v.Kind == "source" {
+		s.noteTrigger(name, s.engine.Trigger(name))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": v})
 }
 
@@ -72,10 +80,22 @@ func (s *Server) handleResetEndpoint(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusNotFound, "未知端点: "+name)
 		return
 	}
+	// 删掉页面配置后回落到环境变量那份，同样只同步这一个源。
+	if v.Kind == "source" {
+		s.noteTrigger(name, s.engine.Trigger(name))
+	}
 	writeJSON(w, http.StatusOK, map[string]any{
 		"code": 0,
 		"data": map[string]any{"removed": removed, "endpoint": v},
 	})
+}
+
+// noteTrigger 处理「配置写成功之后顺带触发同步」的结果：只有队列满值得记一行，
+// 未知源名与未启用都是正常分支（禁用中的源本来就不该被同步）。
+func (s *Server) noteTrigger(name string, res sync.TriggerResult) {
+	if res == sync.TriggerBusy {
+		log.Printf("[api] 保存 %s 后没有触发同步：触发队列已满", name)
+	}
 }
 
 // handleVerifyEndpoint POST /api/v1/settings/endpoints/{name}/verify

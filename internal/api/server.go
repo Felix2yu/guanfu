@@ -15,7 +15,8 @@
 //	POST /api/v1/settings/notify/{name}/test       通知渠道测试发送
 //	PUT  /api/v1/settings/policy                   应用级开关
 //	GET  /api/v1/export          全量/区间导出（JSON，流式；防锁定）
-//	POST /api/v1/sync/{source}   手动同步（{source}=all 表示全部）
+//	POST /api/v1/sync/{source}   手动同步（{source}=all 表示全部启用源；
+//	                              未知源名 400，未启用/没配端点 409，队列满 409）
 //	GET  /api/v1/media/...       媒体代理（见 media.go）
 package api
 
@@ -289,7 +290,19 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusBadRequest, "非法 source 名")
 		return
 	}
-	s.engine.Trigger(name)
-	log.Printf("[api] 手动触发同步: %s", name)
-	writeJSON(w, http.StatusAccepted, map[string]any{"code": 0, "message": "已触发同步: " + name})
+	target := name
+	if target == "all" {
+		target = "*" // 引擎用 "*" 表示「全部启用源」
+	}
+	switch s.engine.Trigger(target) {
+	case sync.TriggerQueued:
+		log.Printf("[api] 手动触发同步: %s", name)
+		writeJSON(w, http.StatusAccepted, map[string]any{"code": 0, "message": "已触发同步: " + name})
+	case sync.TriggerUnknown:
+		writeErr(w, http.StatusBadRequest, "未知数据源: "+name)
+	case sync.TriggerDisabled:
+		writeErr(w, http.StatusConflict, "该源未启用或没配端点，无法同步: "+name)
+	case sync.TriggerBusy:
+		writeErr(w, http.StatusConflict, "同步触发排队已满，请稍后再试")
+	}
 }

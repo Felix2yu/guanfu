@@ -241,8 +241,9 @@ export function fetchSources(): Promise<SourceState[]> {
   return get<SourceState[]>('/api/v1/sources');
 }
 
+/** 触发某源同步（source=all 表示全部启用源）。非 2xx 时抛出后端给的具体原因。 */
 export function triggerSync(source: string): Promise<void> {
-  return fetch(`/api/v1/sync/${encodeURIComponent(source)}`, { method: 'POST' }).then(() => {});
+  return request<void>('POST', `/api/v1/sync/${encodeURIComponent(source)}`).then(() => {});
 }
 
 // 源展示名与主题色（Tailwind 任意值类名，浅色/深色均克制）。

@@ -1,14 +1,21 @@
 package api
 
 import (
+	"context"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync/atomic"
 	"testing"
+	"time"
 
 	"github.com/Felix2yu/guanfu/internal/config"
+	"github.com/Felix2yu/guanfu/internal/model"
+	"github.com/Felix2yu/guanfu/internal/secret"
 	"github.com/Felix2yu/guanfu/internal/settings"
+	"github.com/Felix2yu/guanfu/internal/store"
+	"github.com/Felix2yu/guanfu/internal/sync"
 )
 
 func doJSON(t *testing.T, srv *Server, method, path, body string) *httptest.ResponseRecorder {
@@ -321,4 +328,161 @@ func mustJSON(t *testing.T, v any) string {
 		t.Fatal(err)
 	}
 	return string(b)
+}
+
+// ---------- 保存配置只同步被改动的那个源 ----------
+
+// countingAdapter 记录自己被同步了几次；interval 拉到 1 小时，
+// 保证计数只可能来自「启动首轮」或「定向触发」，不是定时器抢跑。
+type countingAdapter struct {
+	name     string
+	calls    *atomic.Int32
+	interval time.Duration
+}
+
+func (a *countingAdapter) Name() string            { return a.name }
+func (a *countingAdapter) Interval() time.Duration { return a.interval }
+
+func (a *countingAdapter) Sync(context.Context, string, func(*model.Event) error) (string, int, error) {
+	a.calls.Add(1)
+	return "2026-10-23", 1, nil
+}
+
+func waitUntil(t *testing.T, what string, cond func() bool) {
+	t.Helper()
+	deadline := time.Now().Add(2 * time.Second)
+	for time.Now().Before(deadline) {
+		if cond() {
+			return
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	t.Fatalf("等待超时: %s", what)
+}
+
+// scopeHarness 起一台挂着两个 counting 源的 Server，并把页面保存 → OnApply →
+// Reconfigure 这条生产链路接上。计数器按源名共享：Reconfigure 会换掉适配器实例。
+type scopeHarness struct {
+	srv   *Server
+	calls map[string]*atomic.Int32
+}
+
+func newScopeHarness(t *testing.T, enabled func(string) bool) *scopeHarness {
+	t.Helper()
+	sources := map[string]config.SourceConfig{
+		"mujian": {Name: "mujian", BaseURL: "https://m.example.com", Enabled: true},
+		"huozhi": {Name: "huozhi", BaseURL: "https://h.example.com", Enabled: true},
+	}
+	calls := map[string]*atomic.Int32{"mujian": {}, "huozhi": {}}
+	registryFor := func(map[string]config.SourceConfig) *sync.Registry {
+		reg := sync.NewRegistry()
+		for name, c := range calls {
+			reg.Register(&countingAdapter{name: name, calls: c, interval: time.Hour})
+		}
+		return reg
+	}
+
+	st, err := store.Open(t.TempDir() + "/scope.db")
+	if err != nil {
+		t.Fatalf("开库失败: %v", err)
+	}
+	t.Cleanup(func() { st.Close() })
+	box, err := secret.FromPassphrase("test-secret")
+	if err != nil {
+		t.Fatalf("初始化加密器失败: %v", err)
+	}
+	mgr, err := settings.NewManager(st, &config.Config{Sources: sources}, box)
+	if err != nil {
+		t.Fatalf("初始化配置层失败: %v", err)
+	}
+	engine := sync.NewEngine(st, registryFor(sources), enabled)
+	mgr.OnApply(func(c *config.Config) { engine.Reconfigure(registryFor(c.Sources)) })
+	ctx, cancel := context.WithCancel(context.Background())
+	t.Cleanup(cancel)
+	engine.Start(ctx)
+
+	return &scopeHarness{srv: NewServer(st, engine, mgr), calls: calls}
+}
+
+// startSweep 等启动首轮把两个源都同步一遍，然后清零，
+// 让后续计数只可能来自被测动作本身。
+func (h *scopeHarness) startSweep(t *testing.T) {
+	t.Helper()
+	waitUntil(t, "启动首轮两个源都同步", func() bool {
+		return h.calls["mujian"].Load() >= 1 && h.calls["huozhi"].Load() >= 1
+	})
+	for _, c := range h.calls {
+		c.Store(0)
+	}
+}
+
+func (h *scopeHarness) count(name string) int { return int(h.calls[name].Load()) }
+
+// TestSaveEndpointSyncsOnlyThatSource 页面保存某个源的配置会重建整批调度
+// （OnApply → Reconfigure）。重建本身不该追加同步，否则改一个源等于把全部源
+// 都打一遍——用户看到的就是"点单源同步却像全局同步"。
+func TestSaveEndpointSyncsOnlyThatSource(t *testing.T) {
+	h := newScopeHarness(t, func(string) bool { return true })
+	h.startSweep(t)
+
+	if rec := doJSON(t, h.srv, "PUT", "/api/v1/settings/endpoints/mujian",
+		`{"base_url":"https://m.example.com","enabled":true,"interval_secs":1800}`); rec.Code != http.StatusOK {
+		t.Fatalf("保存失败 HTTP %d: %s", rec.Code, rec.Body.String())
+	}
+	waitUntil(t, "被改动的 mujian 同步一轮", func() bool { return h.count("mujian") >= 1 })
+	time.Sleep(300 * time.Millisecond) // 给「顺手扫别的源」留出暴露窗口
+	if got := h.count("huozhi"); got != 0 {
+		t.Fatalf("改一个源的配置不该扫别的源：huozhi 被同步了 %d 次", got)
+	}
+}
+
+// TestSyncEndpointScopes 手动同步端点的受理范围：单源只打一个源，
+// all 打全部启用源，未知源名与未启用的源必须报错而不是回 202 蒙人。
+func TestSyncEndpointScopes(t *testing.T) {
+	h := newScopeHarness(t, func(string) bool { return true })
+	h.startSweep(t)
+
+	// 单源
+	if rec := doJSON(t, h.srv, "POST", "/api/v1/sync/mujian", ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("单源同步应 202，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	waitUntil(t, "mujian 被同步", func() bool { return h.count("mujian") >= 1 })
+	time.Sleep(300 * time.Millisecond)
+	if got := h.count("huozhi"); got != 0 {
+		t.Fatalf("点单源不该带动别的源：huozhi 被同步 %d 次", got)
+	}
+
+	// all：以前会命中 reg.Get("all") 失败而静默什么都不做
+	if rec := doJSON(t, h.srv, "POST", "/api/v1/sync/all", ""); rec.Code != http.StatusAccepted {
+		t.Fatalf("all 应 202，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	waitUntil(t, "全部启用源被同步", func() bool {
+		return h.count("mujian") >= 1 && h.count("huozhi") >= 1
+	})
+}
+
+func TestSyncEndpointRejects(t *testing.T) {
+	// 未注册的名字 → 400
+	h := newScopeHarness(t, func(string) bool { return true })
+	h.startSweep(t)
+	if rec := doJSON(t, h.srv, "POST", "/api/v1/sync/nope", ""); rec.Code != http.StatusBadRequest {
+		t.Fatalf("未知源名应 400，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	time.Sleep(200 * time.Millisecond)
+	if got := h.count("mujian") + h.count("huozhi"); got != 0 {
+		t.Fatalf("被拒的请求不该产生同步，实际 %d 次", got)
+	}
+
+	// 全部源都没启用 → 409，且不能回 202
+	h2 := newScopeHarness(t, func(string) bool { return false })
+	rec := doJSON(t, h2.srv, "POST", "/api/v1/sync/mujian", "")
+	if rec.Code != http.StatusConflict {
+		t.Fatalf("未启用的源应 409，得到 %d: %s", rec.Code, rec.Body.String())
+	}
+	if strings.Contains(rec.Body.String(), "已触发") {
+		t.Fatalf("未受理却报已触发: %s", rec.Body.String())
+	}
+	if got := doJSON(t, h2.srv, "POST", "/api/v1/sync/all", ""); got.Code != http.StatusConflict {
+		t.Fatalf("没有启用源时 all 应 409，得到 %d: %s", got.Code, got.Body.String())
+	}
 }
