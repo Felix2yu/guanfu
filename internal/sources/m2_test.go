@@ -249,22 +249,22 @@ func TestDawarichSyncConfirmedOnlyAndDurationMinutes(t *testing.T) {
 		w.Header().Set("Content-Type", "application/json")
 		visits := []map[string]any{
 			{
-				"id": 1, "name": "公司", "status": "confirmed", "confidence": 0.9,
+				"id": "1", "name": "公司", "status": "confirmed", "confidence": 0.9,
 				"started_at": "2026-10-14T09:00:18+08:00", "ended_at": "2026-10-14T10:41:01+08:00",
 				"duration": 101, // 分钟（timeline 的 journey 才是秒，别混）
-				"place":    map[string]any{"latitude": 31.2304, "longitude": 121.4737, "id": 5},
+				"place":    map[string]any{"latitude": 31.2304, "longitude": 121.4737, "id": "5"},
 			},
 			{
-				"id": 2, "name": "Suggested place", "status": "suggested", "confidence": 0.5,
+				"id": "2", "name": "Suggested place", "status": "suggested", "confidence": 0.5,
 				"started_at": "2026-10-14T13:00:00+08:00", "ended_at": "2026-10-14T13:30:00+08:00",
 				"duration": 30,
-				"place":    map[string]any{"latitude": 31.24, "longitude": 121.48, "id": 6},
+				"place":    map[string]any{"latitude": 31.24, "longitude": 121.48, "id": "6"},
 			},
 			{
-				"id": 3, "name": "", "status": "confirmed", "confidence": 0.8,
+				"id": "3", "name": "", "status": "confirmed", "confidence": 0.8,
 				"started_at": "2026-10-14T19:00:00+08:00", "ended_at": "2026-10-14T20:10:00+08:00",
 				"duration": 70,
-				"place":    map[string]any{"latitude": 31.2000, "longitude": 121.5000, "id": 7},
+				"place":    map[string]any{"latitude": 31.2000, "longitude": 121.5000, "id": "7"},
 			},
 		}
 		page := r.URL.Query().Get("page")

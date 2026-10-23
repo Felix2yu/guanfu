@@ -58,7 +58,7 @@ func (d *DawarichSource) Interval() time.Duration {
 }
 
 type dawarichVisit struct {
-	ID         uint    `json:"id"`
+	ID         flexID  `json:"id"`
 	Name       string  `json:"name"`
 	Status     string  `json:"status"`
 	Confidence float64 `json:"confidence"`
@@ -68,7 +68,6 @@ type dawarichVisit struct {
 	Place      *struct {
 		Latitude  float64 `json:"latitude"`
 		Longitude float64 `json:"longitude"`
-		ID        uint    `json:"id"`
 	} `json:"place"`
 }
 
@@ -127,7 +126,7 @@ func (d *DawarichSource) syncDay(ctx context.Context, day time.Time, upsert func
 			}
 			ev, err := d.mapVisit(v)
 			if err != nil {
-				return n, fmt.Errorf("映射 visit #%d 失败: %w", v.ID, err)
+				return n, fmt.Errorf("映射 visit #%s 失败: %w", v.ID, err)
 			}
 			if err := upsert(ev); err != nil {
 				return n, err
@@ -210,7 +209,7 @@ func (d *DawarichSource) mapVisit(v *dawarichVisit) (*model.Event, error) {
 
 	ev := &model.Event{
 		Source:        d.Name(),
-		ExternalID:    strconv.FormatUint(uint64(v.ID), 10),
+		ExternalID:    v.ID.String(),
 		EventType:     model.EventLocationVisit,
 		TimePrecision: model.PrecisionSecond,
 		OccurredAt:    started.UTC().Unix(),

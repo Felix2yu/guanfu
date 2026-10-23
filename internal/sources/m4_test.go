@@ -185,20 +185,20 @@ func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"count": 2,
 				"tasks": []map[string]any{
-					{"id": 11, "title": "写观复 M4", "status": "done", "priority": 2,
+					{"id": "11", "title": "写观复 M4", "status": "done", "priority": 2,
 						"completedAt": "2026-10-15T22:41:33+08:00", "dueDate": "2026-10-15",
 						"important": true, "urgent": true,
-						"tags":     []map[string]any{{"id": 1, "name": "观复"}},
-						"subtasks": []map[string]any{{"id": 1, "status": "done"}, {"id": 2, "status": "todo"}}},
-					{"id": 12, "title": "未完成不该出现", "status": "done", "completedAt": nil},
+						"tags":     []map[string]any{{"id": "1", "name": "观复"}},
+						"subtasks": []map[string]any{{"id": "1", "status": "done"}, {"id": "2", "status": "todo"}}},
+					{"id": "12", "title": "未完成不该出现", "status": "done", "completedAt": nil},
 				},
 			})
 		case "/api/reviews":
 			// 第一条是空壳（上游缺记录时的形态），必须跳过。
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"reviews": []map[string]any{
-					{"id": 0, "date": m4Today()},
-					{"id": 5, "date": m4Today(), "mood": "平静",
+					{"id": "0", "date": m4Today()},
+					{"id": "5", "date": m4Today(), "mood": "平静",
 						"wins": "完成了三源适配器", "blockers": "沙箱代理不稳", "tomorrow": "跑真实同步"},
 				},
 			})
@@ -209,10 +209,10 @@ func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
 			today := m4Today()
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"from": r.URL.Query().Get("from"), "to": r.URL.Query().Get("to"), "today": today,
-				"habits": []map[string]any{{"id": 1, "name": "晨跑"}, {"id": 2, "name": "阅读"}},
+				"habits": []map[string]any{{"id": "1", "name": "晨跑"}, {"id": "2", "name": "阅读"}},
 				"logs": []map[string]any{
-					{"id": 1, "habitId": 1, "day": today, "count": 1, "note": "5km", "createdAt": today + "T07:10:00+08:00"},
-					{"id": 2, "habitId": 2, "day": today, "count": 2, "createdAt": today + "T21:00:00+08:00"},
+					{"id": "1", "habitId": "1", "day": today, "count": 1, "note": "5km", "createdAt": today + "T07:10:00+08:00"},
+					{"id": "2", "habitId": "2", "day": today, "count": 2, "createdAt": today + "T21:00:00+08:00"},
 				},
 			})
 		default:
@@ -308,9 +308,9 @@ func liuxiaFixture(t *testing.T, seen *[]string) *httptest.Server {
 		day := m4Today()
 		// 裸数组；quality/aod 是指针可空。
 		_ = json.NewEncoder(w).Encode([]map[string]any{
-			{"id": 1, "city": "上海", "date": day, "time": "05:42", "event_type": "morning", "model": "EC", "quality": 0.415, "aod": 0.18},
-			{"id": 2, "city": "上海", "date": day, "time": "17:55", "event_type": "evening", "model": "GFS", "quality": 0.853, "aod": 0.22},
-			{"id": 3, "city": "上海", "date": day, "time": "17:52", "event_type": "evening", "model": "EC", "quality": nil, "aod": nil},
+			{"id": "1", "city": "上海", "date": day, "time": "05:42", "event_type": "morning", "model": "EC", "quality": 0.415, "aod": 0.18},
+			{"id": "2", "city": "上海", "date": day, "time": "17:55", "event_type": "evening", "model": "GFS", "quality": 0.853, "aod": 0.22},
+			{"id": "3", "city": "上海", "date": day, "time": "17:52", "event_type": "evening", "model": "EC", "quality": nil, "aod": nil},
 		})
 	}))
 	t.Cleanup(srv.Close)

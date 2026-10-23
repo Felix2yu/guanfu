@@ -79,13 +79,11 @@ func (s *ShenshiSource) Interval() time.Duration {
 }
 
 type shenshiTag struct {
-	ID   int64  `json:"id"`
 	Name string `json:"name"`
 }
 
 type shenshiTask struct {
-	ID          int64         `json:"id"`
-	ListID      int64         `json:"listId"`
+	ID          flexID        `json:"id"`
 	Title       string        `json:"title"`
 	Notes       string        `json:"notes"`
 	Status      string        `json:"status"`
@@ -103,7 +101,6 @@ type shenshiTask struct {
 }
 
 type shenshiReview struct {
-	ID        int64  `json:"id"`
 	Date      string `json:"date"`
 	Mood      string `json:"mood"`
 	Wins      string `json:"wins"`
@@ -114,7 +111,7 @@ type shenshiReview struct {
 }
 
 type shenshiHabit struct {
-	ID       int64  `json:"id"`
+	ID       flexID `json:"id"`
 	Name     string `json:"name"`
 	Icon     string `json:"icon"`
 	Cadence  string `json:"cadence"`
@@ -123,8 +120,7 @@ type shenshiHabit struct {
 }
 
 type shenshiHabitLog struct {
-	ID        int64  `json:"id"`
-	HabitID   int64  `json:"habitId"`
+	HabitID   flexID `json:"habitId"`
 	Day       string `json:"day"`
 	Count     int    `json:"count"`
 	Note      string `json:"note"`
@@ -282,7 +278,7 @@ func (s *ShenshiSource) fetchReviews(ctx context.Context, limit int) ([]shenshiR
 }
 
 // fetchHabitLogs 拉取区间打卡；同时返回习惯 id→名称 映射供展示。
-func (s *ShenshiSource) fetchHabitLogs(ctx context.Context, from, to string) ([]shenshiHabitLog, map[int64]string, error) {
+func (s *ShenshiSource) fetchHabitLogs(ctx context.Context, from, to string) ([]shenshiHabitLog, map[flexID]string, error) {
 	v := url.Values{}
 	v.Set("from", from)
 	v.Set("to", to)
@@ -291,7 +287,7 @@ func (s *ShenshiSource) fetchHabitLogs(ctx context.Context, from, to string) ([]
 	if err := s.get(ctx, s.cfg.BaseURL+"/api/habits?"+v.Encode(), &board); err != nil {
 		return nil, nil, err
 	}
-	names := make(map[int64]string, len(board.Habits))
+	names := make(map[flexID]string, len(board.Habits))
 	for _, h := range board.Habits {
 		names[h.ID] = h.Name
 	}
@@ -310,7 +306,7 @@ func (s *ShenshiSource) mapTask(t *shenshiTask, loc *time.Location) *model.Event
 	at = at.In(loc)
 	ev := &model.Event{
 		Source:        s.Name(),
-		ExternalID:    "task:" + strconv.FormatInt(t.ID, 10),
+		ExternalID:    "task:" + t.ID.String(),
 		EventType:     model.EventTaskDone,
 		TimePrecision: model.PrecisionSecond,
 		OccurredAt:    at.UTC().Unix(),
@@ -319,7 +315,7 @@ func (s *ShenshiSource) mapTask(t *shenshiTask, loc *time.Location) *model.Event
 		SourceURL:     s.cfg.BaseURL + "/",
 	}
 
-	detail := map[string]any{"task_id": t.ID}
+	detail := map[string]any{"task_id": t.ID.String()}
 	if t.Priority > 0 {
 		detail["priority"] = t.Priority
 	}
@@ -416,7 +412,7 @@ func mapReview(source, baseURL string, r *shenshiReview) *model.Event {
 }
 
 // mapHabitLogs 按天聚合打卡 → habit_check（全天，一天一条）。
-func (s *ShenshiSource) mapHabitLogs(logs []shenshiHabitLog, names map[int64]string) []*model.Event {
+func (s *ShenshiSource) mapHabitLogs(logs []shenshiHabitLog, names map[flexID]string) []*model.Event {
 	byDay := map[string][]shenshiHabitLog{}
 	for _, l := range logs {
 		day := dayOnly(l.Day)
@@ -436,7 +432,7 @@ func (s *ShenshiSource) mapHabitLogs(logs []shenshiHabitLog, names map[int64]str
 		for _, l := range items {
 			name := names[l.HabitID]
 			if name == "" {
-				name = "习惯 " + strconv.FormatInt(l.HabitID, 10)
+				name = "习惯 " + l.HabitID.String()
 			}
 			count := l.Count
 			if count < 1 {

@@ -76,12 +76,10 @@ const (
 
 // qingyePlant 嵌套的植物对象（只取会用到的字段，长尾留在 detail 之外）。
 type qingyePlant struct {
-	ID       int64  `json:"id"`
 	Name     string `json:"name"`
 	Species  string `json:"species"`
 	Location string `json:"location"`
 	Room     *struct {
-		ID   int64  `json:"id"`
 		Name string `json:"name"`
 	} `json:"room"`
 }
@@ -101,8 +99,8 @@ func (p *qingyePlant) place() string {
 
 // qingyeDiary 一条植物日记（照片日记）。
 type qingyeDiary struct {
-	ID        int64        `json:"id"`
-	PlantID   int64        `json:"plantId"`
+	ID        flexID       `json:"id"`
+	PlantID   flexID       `json:"plantId"`
 	Plant     *qingyePlant `json:"plant"`
 	Image     string       `json:"image"`
 	Caption   string       `json:"caption"`
@@ -112,15 +110,15 @@ type qingyeDiary struct {
 
 // qingyeCareLog 一条养护记录。
 type qingyeCareLog struct {
-	ID      int64        `json:"id"`
-	PlantID int64        `json:"plantId"`
+	ID      flexID       `json:"id"`
+	PlantID flexID       `json:"plantId"`
 	Plant   *qingyePlant `json:"plant"`
 	Type    string       `json:"type"`
 	Title   string       `json:"title"`
 	At      string       `json:"at"`
 	Note    string       `json:"note"`
 	Source  string       `json:"source"`
-	TaskID  int64        `json:"taskId"`
+	TaskID  flexID       `json:"taskId"`
 }
 
 type qingyeDiaryData struct {
@@ -288,13 +286,13 @@ func (q *QingyeSource) getJSON(ctx context.Context, path string, dst any) error 
 // mapDiary 植物日记 → plant_diary（day 精度：takenAt 是"哪一天"而非时刻）。
 func (q *QingyeSource) mapDiary(d qingyeDiary, ts int64) *model.Event {
 	day := time.Unix(ts, 0).In(q.loc).Format("2006-01-02")
-	ev := model.NewDayEvent(q.Name(), "dia:"+strconv.FormatInt(d.ID, 10), model.EventPlantDiary, day)
+	ev := model.NewDayEvent(q.Name(), "dia:"+d.ID.String(), model.EventPlantDiary, day)
 	ev.Title = plantTitle(d.Plant, d.PlantID)
 	ev.Summary = truncate(strings.TrimSpace(d.Caption), 2000)
 	ev.LocationName = d.Plant.place()
 	ev.SourceURL = q.cfg.BaseURL + "/"
 
-	detail := map[string]any{"plant_id": d.PlantID}
+	detail := map[string]any{"plant_id": d.PlantID.String()}
 	if d.Plant != nil {
 		detail["plant_name"] = d.Plant.Name
 		if d.Plant.Species != "" {
@@ -320,7 +318,7 @@ func (q *QingyeSource) mapDiary(d qingyeDiary, ts int64) *model.Event {
 func (q *QingyeSource) mapCare(c qingyeCareLog, ts int64) *model.Event {
 	ev := &model.Event{
 		Source:        q.Name(),
-		ExternalID:    "care:" + strconv.FormatInt(c.ID, 10),
+		ExternalID:    "care:" + c.ID.String(),
 		EventType:     model.EventPlantCare,
 		TimePrecision: model.PrecisionSecond,
 		OccurredAt:    ts,
@@ -338,7 +336,7 @@ func (q *QingyeSource) mapCare(c qingyeCareLog, ts int64) *model.Event {
 	}
 	ev.Summary = joinNonEmpty(parts, " · ")
 
-	detail := map[string]any{"plant_id": c.PlantID}
+	detail := map[string]any{"plant_id": c.PlantID.String()}
 	if c.Plant != nil {
 		detail["plant_name"] = c.Plant.Name
 	}
@@ -354,8 +352,9 @@ func (q *QingyeSource) mapCare(c qingyeCareLog, ts int64) *model.Event {
 	if c.Source != "" {
 		detail["source"] = c.Source
 	}
-	if c.TaskID != 0 {
-		detail["task_id"] = c.TaskID
+	// 上游用 0 表示"未关联任务"，与字段缺失同义，都不写进 detail。
+	if c.TaskID != "" && c.TaskID != "0" {
+		detail["task_id"] = c.TaskID.String()
 	}
 	ev.Detail = detail
 	return ev
@@ -363,11 +362,11 @@ func (q *QingyeSource) mapCare(c qingyeCareLog, ts int64) *model.Event {
 
 // plantTitle 卡片标题统一用植物名，让同一株的记录在时间轴上成组；
 // 嵌套 plant 对象缺失时退化成 "植物 #<id>"，不留空标题。
-func plantTitle(p *qingyePlant, plantID int64) string {
+func plantTitle(p *qingyePlant, plantID flexID) string {
 	if p != nil && strings.TrimSpace(p.Name) != "" {
 		return strings.TrimSpace(p.Name)
 	}
-	return "植物 #" + strconv.FormatInt(plantID, 10)
+	return "植物 #" + plantID.String()
 }
 
 // qingyeImageKey 从 image 字段取出可用于代理的文件名。

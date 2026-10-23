@@ -62,9 +62,8 @@ func (l *LiuxiaSource) Interval() time.Duration {
 	return 6 * time.Hour
 }
 
-// liuxiaRecord 一条预报记录（与上游 SunsetRecord 对应）。
+// liuxiaRecord 一条预报记录（与上游 SunsetRecord 对应；上游 id 不参与聚合键，不取）。
 type liuxiaRecord struct {
-	ID        int64    `json:"id"`
 	City      string   `json:"city"`
 	Date      string   `json:"date"`
 	Time      string   `json:"time"`

@@ -59,7 +59,7 @@ func (h *HuozhiSource) Interval() time.Duration {
 
 // huozhiBill 上游精简账单字段（与 handlers.ListPublicBills 对齐）。
 type huozhiBill struct {
-	ID          uint    `json:"id"`
+	ID          flexID  `json:"id"`
 	Description string  `json:"description"`
 	Amount      float64 `json:"amount"` // 元
 	Currency    string  `json:"currency"`
@@ -114,7 +114,7 @@ func (h *HuozhiSource) Sync(ctx context.Context, cursor string, upsert func(*mod
 		for i := range bills {
 			ev, err := h.mapBill(&bills[i], loc)
 			if err != nil {
-				return "", total, fmt.Errorf("映射账单 #%d 失败: %w", bills[i].ID, err)
+				return "", total, fmt.Errorf("映射账单 #%s 失败: %w", bills[i].ID, err)
 			}
 			if err := upsert(ev); err != nil {
 				return "", total, err
@@ -181,7 +181,7 @@ func (h *HuozhiSource) mapBill(b *huozhiBill, loc *time.Location) (*model.Event,
 	}
 	ev := &model.Event{
 		Source:        h.Name(),
-		ExternalID:    strconv.FormatUint(uint64(b.ID), 10),
+		ExternalID:    b.ID.String(),
 		EventType:     model.EventTransaction,
 		TimePrecision: model.PrecisionSecond,
 		OccurredAt:    txTime.UTC().Unix(),
@@ -196,7 +196,7 @@ func (h *HuozhiSource) mapBill(b *huozhiBill, loc *time.Location) (*model.Event,
 			"merchant":    b.Merchant,
 			"amount_yuan": b.Amount,
 		},
-		SourceURL: h.cfg.BaseURL + "/#/bill/" + strconv.FormatUint(uint64(b.ID), 10),
+		SourceURL: h.cfg.BaseURL + "/#/bill/" + b.ID.String(),
 	}
 	return ev, nil
 }

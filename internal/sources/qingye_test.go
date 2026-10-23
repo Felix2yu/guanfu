@@ -23,8 +23,8 @@ import (
 
 func qyPlantJSON(id int64, name, location string) map[string]any {
 	return map[string]any{
-		"id": id, "name": name, "species": "Epipremnum aureum", "photo": "",
-		"roomId": 1, "room": map[string]any{"id": 1, "name": "客厅", "sort": 1, "isOutdoor": false, "icon": ""},
+		"id": strconv.FormatInt(id, 10), "name": name, "species": "Epipremnum aureum", "photo": "",
+		"roomId": "1", "room": map[string]any{"id": "1", "name": "客厅", "sort": 1, "isOutdoor": false, "icon": ""},
 		"note": "浇水：土壤干透后浇水", "location": location,
 		"acquiredDate": nil, "lightReq": "", "attributes": "",
 		"createdAt": "2026-08-26T10:24:45.989547237Z", "updatedAt": "2026-08-26T10:24:45.989547237Z",
@@ -33,7 +33,7 @@ func qyPlantJSON(id int64, name, location string) map[string]any {
 
 func qyDiaryJSON(id int64, plantID int64, plantName, takenAt, image, caption string) map[string]any {
 	return map[string]any{
-		"id": id, "plantId": plantID, "plant": qyPlantJSON(plantID, plantName, ""),
+		"id": strconv.FormatInt(id, 10), "plantId": strconv.FormatInt(plantID, 10), "plant": qyPlantJSON(plantID, plantName, ""),
 		"image": image, "caption": caption, "takenAt": takenAt,
 		"createdAt": "2026-08-19T10:24:45.989547237Z",
 	}
@@ -86,9 +86,9 @@ func TestQingyeFirstRound(t *testing.T) {
 			qyDiaryJSON(2, 2, "龟背竹", utc(2026, 8, 23, 10, 24, 45), "", "无图日记"),
 		}, 2, nil,
 		[]map[string]any{
-			{"id": 1, "plantId": 5, "plant": qyPlantJSON(5, "紫薇", "阳台"),
+			{"id": "1", "plantId": "5", "plant": qyPlantJSON(5, "紫薇", "阳台"),
 				"type": "water", "title": "浇水", "at": utc(2026, 10, 16, 3, 8, 50),
-				"note": "土壤干透", "source": "task", "taskId": 6},
+				"note": "土壤干透", "source": "task", "taskId": "6"},
 		})
 	defer stub.Close()
 
@@ -155,7 +155,7 @@ func TestQingyeFirstRound(t *testing.T) {
 	if care.LocationName != "阳台" {
 		t.Fatalf("养护地点应取 plant.location: %q", care.LocationName)
 	}
-	if care.Detail["source"] != "task" || care.Detail["task_id"] != int64(6) {
+	if care.Detail["source"] != "task" || care.Detail["task_id"] != "6" {
 		t.Fatalf("养护来源字段未保留: %+v", care.Detail)
 	}
 	// 养护不带图，卡片不应渲染照片格。

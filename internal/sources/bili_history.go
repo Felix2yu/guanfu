@@ -61,7 +61,6 @@ type biliRecord struct {
 	LongTitle    string `json:"long_title"`
 	Bvid         string `json:"bvid"`
 	AuthorName   string `json:"author_name"`
-	AuthorMid    int64  `json:"author_mid"`
 	ViewAt       int64  `json:"view_at"` // unix 秒
 	Duration     int    `json:"duration"`
 	TagName      string `json:"tag_name"`

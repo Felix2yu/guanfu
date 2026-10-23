@@ -21,9 +21,9 @@ func newFixtureServer(t *testing.T, seen *[]string) *httptest.Server {
 		"code": 0,
 		"data": map[string]any{
 			"list": []map[string]any{
-				{"id": 101, "description": "午饭", "amount": 23.5, "currency": "CNY", "type": "expense",
+				{"id": "101", "description": "午饭", "amount": 23.5, "currency": "CNY", "type": "expense",
 					"tx_date": "2026-10-14 12:30:00", "merchant": "沙县小吃"},
-				{"id": 102, "description": "工资", "amount": 10000, "currency": "CNY", "type": "income",
+				{"id": "102", "description": "工资", "amount": 10000, "currency": "CNY", "type": "income",
 					"tx_date": "2026-10-15 09:00:00", "merchant": ""},
 			},
 			"pagination": map[string]any{"page": 1, "page_size": 2, "total": 3},
@@ -33,7 +33,7 @@ func newFixtureServer(t *testing.T, seen *[]string) *httptest.Server {
 		"code": 0,
 		"data": map[string]any{
 			"list": []map[string]any{
-				{"id": 103, "description": "退款", "amount": 58, "currency": "CNY", "type": "refund",
+				{"id": "103", "description": "退款", "amount": 58, "currency": "CNY", "type": "refund",
 					"tx_date": "2026-10-15 18:45:12", "merchant": "京东"},
 			},
 			"pagination": map[string]any{"page": 2, "page_size": 2, "total": 3},
