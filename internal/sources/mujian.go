@@ -8,7 +8,6 @@ import (
 	"net/http"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -29,6 +28,7 @@ const mujianOverlapDays = 7
 //	  Resp:   {records:[…], total:N, search_truncated:bool}
 //	  item:   {id, name, date(unix秒), dateText, city, address, rating(int),
 //	           coordinate:{latitude,longitude}, coverFile, coverThumb}
+//	          id 上游已改为字符串（2026-10-23 现网同步报错实证）→ flexID
 //	票根:   GET {base}/api/records/{id}/photos → {photos:[{id,recordId,fileName,sort}]}
 //	         静态访问 {base}/uploads/{fileName}（无认证）
 //	认证:   可选 MJ_AUTH_TOKEN；未配置则放通。配置后支持
@@ -63,7 +63,7 @@ func (m *MujianSource) Interval() time.Duration {
 }
 
 type mujianRecord struct {
-	ID         uint   `json:"id"`
+	ID         flexID `json:"id"`
 	Name       string `json:"name"`
 	Date       int64  `json:"date"` // unix 秒（mujian 本地时间基准）
 	City       string `json:"city"`
@@ -89,8 +89,8 @@ type mujianPhotosResp struct {
 
 // mujianPhoto 票根照片条目（GET /api/records/{id}/photos）。
 type mujianPhoto struct {
-	ID       uint   `json:"id"`
-	RecordID uint   `json:"recordId"`
+	ID       flexID `json:"id"`
+	RecordID flexID `json:"recordId"`
 	FileName string `json:"fileName"` // 存储键，形如 covers/<hash>.<ext>
 	Sort     int    `json:"sort"`
 }
@@ -145,10 +145,10 @@ func (m *MujianSource) syncDay(ctx context.Context, day string, upsert func(*mod
 		rec := &records[i]
 		ev, err := m.mapRecord(rec)
 		if err != nil {
-			return n, fmt.Errorf("映射演出 #%d 失败: %w", rec.ID, err)
+			return n, fmt.Errorf("映射演出 #%s 失败: %w", rec.ID, err)
 		}
 		// 票根照片：逐条拉；失败仅降级（该事件无媒体），不影响其他记录。
-		if photos, perr := m.fetchPhotos(ctx, rec.ID); perr == nil && len(photos) > 0 {
+		if photos, perr := m.fetchPhotos(ctx, rec.ID.String()); perr == nil && len(photos) > 0 {
 			media := make([]model.MediaRef, 0, len(photos))
 			for _, p := range photos {
 				if p.FileName == "" {
@@ -205,8 +205,8 @@ func (m *MujianSource) fetchRecords(ctx context.Context, day string) ([]mujianRe
 	return lr.Records, nil
 }
 
-func (m *MujianSource) fetchPhotos(ctx context.Context, recordID uint) ([]mujianPhoto, error) {
-	reqURL := fmt.Sprintf("%s/api/records/%d/photos", m.cfg.BaseURL, recordID)
+func (m *MujianSource) fetchPhotos(ctx context.Context, recordID string) ([]mujianPhoto, error) {
+	reqURL := fmt.Sprintf("%s/api/records/%s/photos", m.cfg.BaseURL, url.PathEscape(recordID))
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, reqURL, nil)
 	if err != nil {
 		return nil, err
@@ -247,7 +247,7 @@ func (m *MujianSource) mapRecord(rec *mujianRecord) (*model.Event, error) {
 	occurred := time.Unix(rec.Date, 0).In(m.loc)
 	ev := &model.Event{
 		Source:        m.Name(),
-		ExternalID:    strconv.FormatUint(uint64(rec.ID), 10),
+		ExternalID:    rec.ID.String(),
 		EventType:     model.EventPerformance,
 		TimePrecision: model.PrecisionSecond,
 		OccurredAt:    occurred.UTC().Unix(),
@@ -257,7 +257,7 @@ func (m *MujianSource) mapRecord(rec *mujianRecord) (*model.Event, error) {
 			"city":    rec.City,
 			"address": rec.Address,
 		},
-		SourceURL: fmt.Sprintf("%s/#/records/%d", m.cfg.BaseURL, rec.ID),
+		SourceURL: fmt.Sprintf("%s/#/records/%s", m.cfg.BaseURL, rec.ID),
 	}
 	if ev.Title == "" {
 		ev.Title = "演出"

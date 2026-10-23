@@ -31,8 +31,8 @@ func TestMujianSyncMappingAndCoordinateConversion(t *testing.T) {
 		case strings.HasPrefix(r.URL.Path, "/api/records/77/photos"):
 			_ = json.NewEncoder(w).Encode(map[string]any{
 				"photos": []map[string]any{
-					{"id": 1, "recordId": 77, "fileName": "covers/b.avif", "sort": 2},
-					{"id": 2, "recordId": 77, "fileName": "covers/a.avif", "sort": 1},
+					{"id": "1", "recordId": "77", "fileName": "covers/b.avif", "sort": 2},
+					{"id": "2", "recordId": "77", "fileName": "covers/a.avif", "sort": 1},
 				},
 			})
 		default: // /api/records：仅当查询日期覆盖记录日期才返回（按天查询）
@@ -43,7 +43,7 @@ func TestMujianSyncMappingAndCoordinateConversion(t *testing.T) {
 				_ = json.NewEncoder(w).Encode(map[string]any{
 					"records": []map[string]any{
 						{
-							"id": 77, "name": "某乐队专场", "date": recUnix,
+							"id": "77", "name": "某乐队专场", "date": recUnix,
 							"city": "上海", "address": "MAO Livehouse", "rating": 5,
 							"coordinate": map[string]any{"latitude": 31.2304, "longitude": 121.4737}, // GCJ-02 粘贴值
 						},
