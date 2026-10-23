@@ -91,4 +91,3 @@ updates:
       prefix: "chore"
     labels:
       - "dependencies"
-      - "ci"
