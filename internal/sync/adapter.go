@@ -110,23 +110,28 @@ func (e *Engine) Start(ctx context.Context) {
 	e.parent = ctx
 	e.mu.Unlock()
 	go e.runManual(ctx)
-	e.respawn()
+	e.respawn(true) // 进程启动这一轮：每个启用源都立即同步一次
 }
 
 // Reconfigure 用新的适配器注册表替换当前调度（配置改完后调用）。
 // 未 Start 过时只记下新注册表，等 Start 时生效。
+//
+// 重建只换调度，不追加同步：所有启用源都被扫一轮的话，改一个源的配置
+// 就等于全量同步（上游被打扰、页面看起来像"点了全局同步"）。
+// 需要立刻同步被改动的那个源时，由调用方随后 Trigger(name)。
 func (e *Engine) Reconfigure(reg *Registry) {
 	e.mu.Lock()
 	e.registry = reg
 	started := e.parent != nil
 	e.mu.Unlock()
 	if started {
-		e.respawn()
+		e.respawn(false)
 	}
 }
 
 // respawn 取消上一批调度 goroutine 并按当前注册表重开。
-func (e *Engine) respawn() {
+// syncNow=false 时不追加首轮同步（配置变更后重建调度用），新周期由各自的 ticker 触发。
+func (e *Engine) respawn(syncNow bool) {
 	e.mu.Lock()
 	if e.parent == nil {
 		e.mu.Unlock()
@@ -149,7 +154,7 @@ func (e *Engine) respawn() {
 				_ = e.store.SaveSourceState(a.Name(), true, int(a.Interval().Seconds()), "", 0, "", 0)
 			}
 		}
-		go e.runSource(runCtx, a)
+		go e.runSource(runCtx, a, syncNow)
 	}
 }
 
@@ -171,11 +176,43 @@ func (e *Engine) isEnabled(name string) bool {
 	return fn(name)
 }
 
-// Trigger 请求手动同步某源（name="*" 表示全部启用源）。非阻塞。
-func (e *Engine) Trigger(name string) {
+// TriggerResult 手动触发的受理结果。调用方据此回状态码——
+// 「压根没受理」不能继续对外报「已触发同步」。
+type TriggerResult int
+
+const (
+	TriggerQueued   TriggerResult = iota // 已排进触发队列
+	TriggerUnknown                       // 注册表里没有这个源
+	TriggerDisabled                      // 有这个名字，但当前不参与调度
+	TriggerBusy                          // 队列已满，本次请求被丢弃
+)
+
+// Trigger 请求手动同步某源（"*" 表示全部启用源）。非阻塞。
+// 受理判定读当前注册表快照；若判定后到消费前发生了 Reconfigure，
+// runManual 会按新注册表再解析一次，不会去同步已经不存在的源。
+func (e *Engine) Trigger(name string) TriggerResult {
+	reg := e.currentRegistry()
+	if name == "*" {
+		any := false
+		for _, a := range reg.All() {
+			if e.isEnabled(a.Name()) {
+				any = true
+				break
+			}
+		}
+		if !any {
+			return TriggerDisabled
+		}
+	} else if _, ok := reg.Get(name); !ok {
+		return TriggerUnknown
+	} else if !e.isEnabled(name) {
+		return TriggerDisabled
+	}
 	select {
 	case e.trigger <- name:
+		return TriggerQueued
 	default:
+		return TriggerBusy
 	}
 }
 
@@ -214,14 +251,18 @@ func (e *Engine) runManual(ctx context.Context) {
 	}
 }
 
-func (e *Engine) runSource(ctx context.Context, a Adapter) {
+func (e *Engine) runSource(ctx context.Context, a Adapter, syncNow bool) {
 	interval := a.Interval()
 	if interval <= 0 {
 		// 无周期：仅在启动时跑一轮，之后只响应手动触发。
-		e.syncOnce(ctx, a)
+		if syncNow {
+			e.syncOnce(ctx, a)
+		}
 		return
 	}
-	e.syncOnce(ctx, a)
+	if syncNow {
+		e.syncOnce(ctx, a)
+	}
 	ticker := time.NewTicker(interval)
 	defer ticker.Stop()
 	for {

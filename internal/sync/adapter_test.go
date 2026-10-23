@@ -102,8 +102,9 @@ func TestEngineReconfigureSwapsAdapters(t *testing.T) {
 
 	waitFor(t, "旧适配器进入 Sync", func() bool { return old.calls.Load() >= 1 })
 
-	// 换成一个新适配器：旧的那批 goroutine 必须被取消，新的必须跑起来。
+	// 换成一个新适配器：旧的那批 goroutine 必须被取消。
 	fresh := newFake("b")
+	fresh.interval = time.Hour // 排除 ticker 抢跑，只观察"重建本身有没有顺带同步"
 	reg2 := NewRegistry()
 	reg2.Register(fresh)
 	e.Reconfigure(reg2)
@@ -113,7 +114,13 @@ func TestEngineReconfigureSwapsAdapters(t *testing.T) {
 	case <-time.After(2 * time.Second):
 		t.Fatal("重建后旧调度没有被取消")
 	}
-	waitFor(t, "新适配器被同步", func() bool { return fresh.calls.Load() >= 1 })
+	// 重建不该顺手把新适配器同步一轮：那会让"改一个源的配置"变成"全量同步"。
+	time.Sleep(200 * time.Millisecond)
+	if got := fresh.calls.Load(); got != 0 {
+		t.Fatalf("Reconfigure 不该立即同步新适配器，实际跑了 %d 次", got)
+	}
+	e.Trigger("b")
+	waitFor(t, "Trigger 之后新适配器被同步", func() bool { return fresh.calls.Load() >= 1 })
 }
 
 func TestEngineReconfigureBeforeStartOnlySwapsRegistry(t *testing.T) {
@@ -153,6 +160,7 @@ func TestEngineTriggerUsesNewRegistry(t *testing.T) {
 	waitFor(t, "首次同步", func() bool { return a.calls.Load() >= 1 })
 
 	fresh := newFake("a") // 同名新实例，模拟适配器重建
+	fresh.interval = time.Hour
 	reg2 := NewRegistry()
 	reg2.Register(fresh)
 	e.Reconfigure(reg2)
@@ -160,6 +168,37 @@ func TestEngineTriggerUsesNewRegistry(t *testing.T) {
 	before := fresh.calls.Load()
 	e.Trigger("a")
 	waitFor(t, "手动触发打到新适配器", func() bool { return fresh.calls.Load() > before })
+}
+
+func TestTriggerResults(t *testing.T) {
+	st := openStore(t)
+	a := newFake("a")
+	a.interval = time.Hour
+	reg := NewRegistry()
+	reg.Register(a)
+
+	// 故意不 Start：没有消费者，才能稳定测「队列满」这条以前被静默吞掉的分支。
+	e := NewEngine(st, reg, func(string) bool { return true })
+	if got := e.Trigger("nope"); got != TriggerUnknown {
+		t.Fatalf("未注册的源名应 TriggerUnknown，实际 %d", got)
+	}
+	for i := 0; i < cap(e.trigger); i++ {
+		if got := e.Trigger("a"); got != TriggerQueued {
+			t.Fatalf("队列第 %d 位应受理，实际 %d", i, got)
+		}
+	}
+	if got := e.Trigger("a"); got != TriggerBusy {
+		t.Fatalf("队列满应报 TriggerBusy，不能静默丢弃，实际 %d", got)
+	}
+
+	// 注册了但没启用 → 拒收；"*" 在没有任何启用源时同样拒收。
+	e2 := NewEngine(st, reg, func(string) bool { return false })
+	if got := e2.Trigger("a"); got != TriggerDisabled {
+		t.Fatalf("未启用的源应 TriggerDisabled，实际 %d", got)
+	}
+	if got := e2.Trigger("*"); got != TriggerDisabled {
+		t.Fatalf("没有启用源时 * 应 TriggerDisabled，实际 %d", got)
+	}
 }
 
 func TestOnFailureOnlyOnTransition(t *testing.T) {

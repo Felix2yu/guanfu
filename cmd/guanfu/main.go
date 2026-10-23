@@ -128,6 +128,7 @@ func main() {
 	engine := sync.NewEngine(st, registry, isActive)
 
 	// 页面保存配置后：重建适配器 + 重启这批调度 goroutine，进程不重启。
+	// 重建本身不追加同步，被改动的源由 API 层单独 Trigger（见 settings.handleSaveEndpoint）。
 	mgr.OnApply(func(c *config.Config) {
 		engine.Reconfigure(registryFor(c.Sources))
 		log.Printf("[settings] 配置已生效：重建 %d 个源适配器并按新配置调度", len(c.Sources))
