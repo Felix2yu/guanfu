@@ -54,8 +54,18 @@ export const AUTH_LABELS: Record<AuthKind, string> = {
   api_key: 'API Key 请求头',
   bearer: 'Bearer Token',
   basic: 'Basic（用户名:密码）',
-  jwt: 'JWT（可填 用户名:密码 自动续期）',
+  jwt: 'JWT（可填 用户名:密码 或 API token）',
   token: 'Token（源侧未配则放通）'
+};
+
+/** 紧凑场景（表格单元格）用的短标签；完整说明留给编辑器下拉与 title 提示。 */
+export const AUTH_SHORT_LABELS: Record<AuthKind, string> = {
+  none: '无需凭据',
+  api_key: 'API Key',
+  bearer: 'Bearer',
+  basic: 'Basic',
+  jwt: 'JWT / API token',
+  token: 'Token'
 };
 
 /**

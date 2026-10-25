@@ -2,6 +2,7 @@
   import { onMount } from 'svelte';
   import {
     AUTH_LABELS,
+    AUTH_SHORT_LABELS,
     fetchSources,
     fmtAgo,
     sourceLabel,
@@ -141,8 +142,13 @@
     return { label: '已停用', cls: 'text-ink-3', dot: 'var(--gf-ink-3)' };
   }
 
-  const fmtInterval = (secs: number): string =>
-    secs > 0 ? `${Math.round(secs / 60)} 分钟` : '默认';
+  const fmtInterval = (secs: number): string => {
+    if (secs <= 0) return '默认';
+    const mins = Math.round(secs / 60);
+    // 整小时折成「N 小时」：360 分钟在右对齐的窄列里既长又容易被拆行。
+    if (mins >= 60 && mins % 60 === 0) return `${mins / 60} 小时`;
+    return `${mins} 分钟`;
+  };
 
   const secretSourceLabel = $derived(SECRET_SOURCE_LABELS[conf?.secret_source ?? ''] ?? '未知');
 </script>
@@ -192,45 +198,51 @@
     {:else}
       <div class="overflow-x-auto">
         <table class="w-full text-left fs-12 md:min-w-[880px]">
-          <thead class="border-b border-line fs-11 text-ink-3">
+          <!-- 数据行整体不换行：CJK 在 auto 表格里任意断行，「运行中」「44 分钟前」
+               会被拆得长长短短；放行溢出交给外层 overflow-x-auto 滚动。
+               编辑器行（colspan）不在此约束内，表单文本照常折行。 -->
+          <thead class="border-b border-line fs-11 whitespace-nowrap text-ink-3">
             <tr>
-              <th class="px-4 py-2.5 font-medium">源</th>
-              <th class="px-4 py-2.5 font-medium">状态</th>
-              <th class="hidden px-4 py-2.5 font-medium md:table-cell">端点</th>
-              <th class="hidden px-4 py-2.5 font-medium lg:table-cell">认证</th>
-              <th class="hidden px-4 py-2.5 font-medium lg:table-cell">凭据</th>
-              <th class="hidden px-4 py-2.5 text-right font-medium md:table-cell">间隔</th>
-              <th class="hidden px-4 py-2.5 text-right font-medium sm:table-cell">上次同步</th>
-              <th class="px-4 py-2.5 text-right font-medium"></th>
+              <th class="px-3 py-2.5 font-medium">源</th>
+              <th class="px-3 py-2.5 font-medium">状态</th>
+              <th class="hidden px-3 py-2.5 font-medium md:table-cell">端点</th>
+              <th class="hidden px-3 py-2.5 font-medium lg:table-cell">认证</th>
+              <th class="hidden px-3 py-2.5 font-medium lg:table-cell">凭据</th>
+              <th class="hidden px-3 py-2.5 text-right font-medium md:table-cell">间隔</th>
+              <th class="hidden px-3 py-2.5 text-right font-medium sm:table-cell">上次同步</th>
+              <th class="px-3 py-2.5 text-right font-medium"></th>
             </tr>
           </thead>
           <tbody>
             {#each sourceEndpoints as e (e.name)}
               {@const st = statusOf(e.name)}
               {@const s = stateOf(e.name)}
-              <tr class="border-t border-line">
-                <td class="px-4 py-2.5">
+              <tr class="border-t border-line whitespace-nowrap">
+                <td class="px-3 py-2.5">
                   <span class="font-medium text-ink">{sourceLabel(e.name)}</span>
                   <!-- 窄屏只留中文名 + 来源徽标：7 列在 390px 上会把「编辑」挤出屏幕。 -->
                   <span class="ml-1.5 hidden text-ink-3 sm:inline">{e.name}</span>
                   <span class="ml-1.5 tag">{e.origin === 'page' ? '页面' : 'env'}</span>
                 </td>
-                <td class="px-4 py-2.5 {st.cls}" title={s?.last_error || undefined}>
+                <td class="px-3 py-2.5 {st.cls}" title={s?.last_error || undefined}>
                   <span class="inline-flex items-center gap-1.5">
                     <span class="h-1.5 w-1.5 rounded-full" style:background={st.dot}></span>
                     {st.label}
                   </span>
                 </td>
                 <td
-                  class="hidden max-w-[220px] truncate px-4 py-2.5 text-ink-3 md:table-cell"
+                  class="hidden max-w-[220px] truncate px-3 py-2.5 text-ink-3 md:table-cell"
                   title={e.base_url || ''}
                 >
                   {e.base_url || '—'}
                 </td>
-                <td class="hidden px-4 py-2.5 text-ink-3 lg:table-cell">
-                  {AUTH_LABELS[e.auth as AuthKind]}
+                <td
+                  class="hidden px-3 py-2.5 text-ink-3 lg:table-cell"
+                  title={AUTH_LABELS[e.auth as AuthKind]}
+                >
+                  {AUTH_SHORT_LABELS[e.auth as AuthKind] ?? e.auth}
                 </td>
-                <td class="hidden px-4 py-2.5 lg:table-cell">
+                <td class="hidden px-3 py-2.5 lg:table-cell">
                   {#if e.auth === 'none'}
                     <span class="text-ink-3">不需要</span>
                   {:else if e.secret_set}
@@ -239,13 +251,13 @@
                     <span class="text-ink-3">未设置</span>
                   {/if}
                 </td>
-                <td class="tnum hidden px-4 py-2.5 text-right text-ink-3 md:table-cell">
+                <td class="tnum hidden px-3 py-2.5 text-right text-ink-3 md:table-cell">
                   {fmtInterval(e.interval_secs || s?.interval_secs || 0)}
                 </td>
-                <td class="tnum hidden px-4 py-2.5 text-right text-ink-3 sm:table-cell">
+                <td class="tnum hidden px-3 py-2.5 text-right text-ink-3 sm:table-cell">
                   {fmtAgo(s?.last_sync_at ?? 0)}
                 </td>
-                <td class="px-4 py-2.5 text-right">
+                <td class="px-3 py-2.5 text-right">
                   <button
                     type="button"
                     class="btn"

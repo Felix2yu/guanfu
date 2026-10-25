@@ -157,6 +157,131 @@ func TestDiarumCredentialLoginAndCaching(t *testing.T) {
 	}
 }
 
+// ---------- diarum 公开面（API token） ----------
+
+// diarumPublicFixture 只实现公开接口的模拟 diarum（API token 鉴权，校验 Bearer
+// 头；不实现 exists / by-date / login——公开面不应触达这些 JWT 面路径）。
+func diarumPublicFixture(t *testing.T, token string) (*httptest.Server, *[]string) {
+	t.Helper()
+	var seen []string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		seen = append(seen, r.Method+" "+r.URL.RequestURI()+" auth="+r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		if r.Header.Get("Authorization") != "Bearer "+token {
+			w.WriteHeader(http.StatusUnauthorized)
+			_ = json.NewEncoder(w).Encode(map[string]any{"message": "Invalid API token"})
+			return
+		}
+		q := r.URL.Query()
+		switch {
+		case r.URL.Path == "/api/v1/diaries" && q.Get("start") != "":
+			// 10-15 有正文；10-16 仅天气自动填充；10-17 有心情分无正文。
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"diaries": []map[string]any{
+					{"id": "d16", "date": "2026-10-16", "content": "", "mood": 0, "scenarios": []string{}, "weather": "晴"},
+					{"id": "d15", "date": "2026-10-15", "content": "<p>昆曲。</p>", "mood": 4, "scenarios": []string{"日常"}, "weather": "多云"},
+					{"id": "d17", "date": "2026-10-17", "content": "", "mood": 3, "scenarios": []string{}, "weather": "小雨"},
+				},
+				"total": 3,
+			})
+		case r.URL.Path == "/api/v1/diaries" && q.Get("date") != "":
+			switch q.Get("date") {
+			case "2026-10-17":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"id": "d17", "date": "2026-10-17", "exists": true,
+					"content": "", "mood": 3, "mood_states": []string{"平静"},
+					"scenarios": []string{}, "weather": "小雨", "city": "苏州",
+					"temp_min": 15, "temp_max": 21, "tags": []string{},
+					"created": "2026-10-17T20:01:00Z", "updated": "2026-10-17T20:05:00Z",
+				})
+			case "2026-10-15":
+				_ = json.NewEncoder(w).Encode(map[string]any{
+					"id": "d15", "date": "2026-10-15", "exists": true,
+					"content": "<p>昆曲。</p>", "mood": 4, "mood_states": []string{"愉悦"},
+					"scenarios": []string{"日常"}, "weather": "多云", "city": "苏州",
+					"temp_min": 13, "temp_max": 20, "tags": []string{"昆曲"},
+					"created": "2026-10-15T20:01:00Z", "updated": "2026-10-15T20:05:00Z",
+				})
+			default:
+				_ = json.NewEncoder(w).Encode(map[string]any{"date": q.Get("date"), "content": "", "exists": false})
+			}
+		default:
+			w.WriteHeader(http.StatusNotFound)
+		}
+	}))
+	t.Cleanup(srv.Close)
+	return srv, &seen
+}
+
+func TestDiarumSyncViaPublicAPIToken(t *testing.T) {
+	const token = "9ce83309255878e56aef3100b9c90bec"
+	srv, seen := diarumPublicFixture(t, token)
+
+	src := NewDiarumSource(config.SourceConfig{BaseURL: srv.URL, APIKey: token, LookbackDays: 30})
+	var events []*model.Event
+	cursor, count, err := src.Sync(context.Background(), "", func(ev *model.Event) error {
+		events = append(events, ev)
+		return nil
+	})
+	if err != nil {
+		t.Fatalf("Sync 失败: %v", err)
+	}
+	// 10-16 仅天气被粗筛剔除；10-17 有心情分（列表可见）进时间轴。
+	if count != 2 {
+		t.Fatalf("期望 2 条日记，实际 %d", count)
+	}
+	if cursor != "2026-10-17" {
+		t.Fatalf("cursor 异常: %q", cursor)
+	}
+	// 全部请求走公开接口 + Bearer token；不触达 JWT 面与登录。
+	for _, s := range *seen {
+		if strings.Contains(s, "/exists") || strings.Contains(s, "/by-date/") || strings.Contains(s, "/auth/login") {
+			t.Fatalf("公开面不应触达 JWT 面接口: %s", s)
+		}
+		if !strings.Contains(s, "auth=Bearer "+token) {
+			t.Fatalf("请求缺少 API token 鉴权: %s", s)
+		}
+	}
+	// 粗筛后逐日取全量：3 条记录中 2 条触发单日查询，共 3 个请求。
+	if got := len(*seen); got != 3 {
+		t.Fatalf("期望 1 次列表 + 2 次单日共 3 个请求，实际 %d: %v", got, *seen)
+	}
+
+	// 心情分非零但正文为空的日记也要保留完整 detail（列表里看不到 mood_states）。
+	byDate := map[string]*model.Event{}
+	for _, ev := range events {
+		byDate[ev.LocalDate] = ev
+	}
+	e17 := byDate["2026-10-17"]
+	if e17 == nil {
+		t.Fatal("10-17 日记丢失")
+	}
+	if e17.Detail["mood"].(int) != 3 || e17.Detail["mood_states"].([]string)[0] != "平静" {
+		t.Fatalf("10-17 detail 异常: %v", e17.Detail)
+	}
+	if e17.Summary != "心情 平静 · 小雨 · 15~21°C" {
+		t.Fatalf("10-17 摘要异常: %q", e17.Summary)
+	}
+}
+
+func TestDiarumCredentialRouting(t *testing.T) {
+	// 路由只看凭据形态：JWT / 用户名:密码 走受保护面，其余一律公开面。
+	for _, tc := range []struct {
+		key    string
+		public bool
+	}{
+		{"eyJhbGciOiJIUzI1NiJ9.eyJpZCI6InUxIn0.sig", false},
+		{"yufei:secret", false},
+		{"9ce83309255878e56aef3100b9c90bec", true},
+		{"plain-long-lived-token", true},
+	} {
+		src := NewDiarumSource(config.SourceConfig{APIKey: tc.key})
+		if got := src.usesPublicAPI(); got != tc.public {
+			t.Errorf("APIKey %q: usesPublicAPI 期望 %v，实际 %v", tc.key, tc.public, got)
+		}
+	}
+}
+
 func TestDiarumUnconfigured(t *testing.T) {
 	src := NewDiarumSource(config.SourceConfig{})
 	if _, _, err := src.Sync(context.Background(), "", func(*model.Event) error { return nil }); err == nil {

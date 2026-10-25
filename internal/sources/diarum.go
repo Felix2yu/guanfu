@@ -22,27 +22,27 @@ const diarumOverlapDays = 7
 
 // DiarumSource 吾身（diarum）日记适配器。
 //
-// 上游接口（2026-10-16 读源码确认，backend/internal/api/diaries.go）：
+// 上游有两套互不相通的鉴权面（2026-10-25 读源码 + 线上实测确认）：
 //
-//	GET  {base}/api/v1/diaries/exists?start&end
-//	  → {dates:[...], entries:[{date,mood,weather,city,temp_min,temp_max,has_content}]}
-//	  （一条请求拿整个区间的「有日记的日期」，含 has_content 标记）
-//	GET  {base}/api/v1/diaries/by-date/:date
-//	  → 完整日记 {id,date,content(HTML),mood,mood_states,scenarios,weather,city,
-//	              temp_min,temp_max,tags,created,updated,exists}
-//	POST {base}/api/v1/auth/login {usernameOrEmail,password} → {token}
+//	JWT 面（internal/auth，auth.Middleware 只认 Bearer 登录 JWT，30 天有效）：
+//	  GET  {base}/api/v1/diaries/exists?start&end
+//	    → {dates:[...], entries:[{date,mood,weather,city,temp_min,temp_max,has_content}]}
+//	  GET  {base}/api/v1/diaries/by-date/:date → 完整日记（含 mood_states/tags/气温）
+//	  POST {base}/api/v1/auth/login {usernameOrEmail,password} → {token}
+//	公开面（internal/api/public.go，API token 经 ?token= 或 Bearer 头校验）：
+//	  GET  {base}/api/v1/diaries?date=:date → 完整日记（字段与 by-date 一致）
+//	  GET  {base}/api/v1/diaries?start&end  → {diaries:[{id,date,content,mood,scenarios,weather}]}
 //
-// 鉴权：REST 全部走 auth.Middleware，只认 Authorization: Bearer <JWT>
-// （30 天有效；MCP 的 API token 不通用，勿混用）。DIARUM_API_KEY 支持两种形态：
-//   - 直接贴 JWT（三 segment、eyJ 开头）：即取即用，过期后报错提示更新；
-//   - "用户名:密码"：适配器自动登录换取 JWT 并缓存至临近过期，无需人工轮换。
+// DIARUM_API_KEY 三种形态，按形态选面（只看凭据本身，不受页面认证方式覆盖影响）：
+//   - JWT（eyJ 开头三段式、中段可解出 claims）：直传，走 JWT 面；
+//   - "用户名:密码"（含冒号且两段非空）：自动登录换 JWT 并缓存至临近过期，走 JWT 面；
+//   - 其余一律视为设置页签发的 API token（MCP 同款）：Bearer 直传，走公开面。
 //
-// 判定形态只看「是否含冒号」：JWT 不含冒号，一律直传；含冒号且两段非空
-// 才走登录。这样既兼容未来服务端支持的长效 API token，也不会把 JWT 误判。
-//
-// 策略：先用 exists 拿区间内有内容的日期（1 请求），再逐日 by-date 取全文。
-// 只收 has_content=true 的条目——仅含自动天气填充、无正文/心情/标签的
-// 「空日记」不进时间轴（与服务端 diaryHasContent 语义一致）。
+// 策略：先拿区间内有内容的日期（JWT 面 1 次 exists，has_content 服务端判定；
+// 公开面 1 次列表，但列表不回 tags/mood_states/气温，只能按 content/mood/scenarios
+// 粗筛——「仅标签或心情状态、无正文无心情分」的日记在公开面会漏，服务端
+// has_content 无法复刻，接受此差异），再逐日取全文。仅含自动天气填充、
+// 无正文/心情/标签的「空日记」不进时间轴（与服务端 diaryHasContent 语义一致）。
 //
 // cursor：YYYY-MM-DD；首轮回溯 LookbackDays（默认 365）。
 type DiarumSource struct {
@@ -95,6 +95,15 @@ func isCredentialPair(s string) bool {
 	return ok && user != "" && pass != ""
 }
 
+// usesPublicAPI 判断凭据是否为 API token 形态（走公开接口 /api/v1/diaries）。
+// JWT 与「用户名:密码」最终都变成 Bearer JWT，走 auth.Middleware 保护的接口；
+// 其余一律视为 diarum 设置页签发的 API token。两个面的接口路径不同、鉴权面
+// 不同（见类型注释），路由选择只看凭据形态，与页面上的认证方式覆盖无关。
+func (d *DiarumSource) usesPublicAPI() bool {
+	k := d.cfg.APIKey
+	return k != "" && !isCredentialPair(k) && !isJWT(k)
+}
+
 // diarumExistsResp GET /api/v1/diaries/exists 响应。
 type diarumExistsResp struct {
 	Dates   []string `json:"dates"`
@@ -127,10 +136,26 @@ type diarumDiary struct {
 	Exists     bool     `json:"exists"`
 }
 
-// Sync 按区间增量同步日记：exists 定位有内容的日期，逐日取全文。
+// diarumPublicItem GET /api/v1/diaries?start&end 列表项（公开面，是完整日记的字段子集）。
+type diarumPublicItem struct {
+	ID        string   `json:"id"`
+	Date      string   `json:"date"`
+	Content   string   `json:"content"`
+	Mood      int      `json:"mood"`
+	Scenarios []string `json:"scenarios"`
+	Weather   string   `json:"weather"`
+}
+
+// diarumPublicListResp 公开面区间列表响应。
+type diarumPublicListResp struct {
+	Diaries []diarumPublicItem `json:"diaries"`
+	Total   int                `json:"total"`
+}
+
+// Sync 按区间增量同步日记：先定位有内容的日期，逐日取全文。
 func (d *DiarumSource) Sync(ctx context.Context, cursor string, upsert func(*model.Event) error) (string, int, error) {
 	if d.cfg.BaseURL == "" || d.cfg.APIKey == "" {
-		return "", 0, fmt.Errorf("diarum 未配置：需要 DIARUM_BASE_URL 与 DIARUM_API_KEY（JWT 或 用户名:密码）")
+		return "", 0, fmt.Errorf("diarum 未配置：需要 DIARUM_BASE_URL 与 DIARUM_API_KEY（JWT、用户名:密码 或 API token）")
 	}
 
 	loc := d.loc
@@ -147,19 +172,11 @@ func (d *DiarumSource) Sync(ctx context.Context, cursor string, upsert func(*mod
 		return cursor, 0, nil
 	}
 
-	// 一条请求拿整个区间的有日记日期。
-	ex, err := d.fetchExists(ctx, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	// 区间内有内容的日期（升序，cursor 语义更稳）。
+	dates, err := d.contentDates(ctx, start, end)
 	if err != nil {
 		return "", 0, err
 	}
-	// 取区间内有内容的日期（升序，cursor 语义更稳）。
-	dates := make([]string, 0, len(ex.Entries))
-	for _, e := range ex.Entries {
-		if e.HasContent {
-			dates = append(dates, e.Date)
-		}
-	}
-	sort.Strings(dates)
 
 	var (
 		newCursor = cursor
@@ -199,8 +216,64 @@ func (d *DiarumSource) fetchExists(ctx context.Context, start, end string) (*dia
 	return &ex, nil
 }
 
+// contentDates 拿区间内有内容的日期（升序）。按凭据形态选面：JWT 面 exists
+// 自带服务端判定的 has_content；公开面列表字段是子集，只能先粗筛再逐日精判。
+func (d *DiarumSource) contentDates(ctx context.Context, start, end time.Time) ([]string, error) {
+	if d.usesPublicAPI() {
+		lst, err := d.fetchPublicList(ctx, start, end)
+		if err != nil {
+			return nil, err
+		}
+		dates := make([]string, 0, len(lst.Diaries))
+		for _, it := range lst.Diaries {
+			if publicListHasContent(it) {
+				dates = append(dates, it.Date)
+			}
+		}
+		sort.Strings(dates)
+		return dates, nil
+	}
+	ex, err := d.fetchExists(ctx, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	if err != nil {
+		return nil, err
+	}
+	dates := make([]string, 0, len(ex.Entries))
+	for _, e := range ex.Entries {
+		if e.HasContent {
+			dates = append(dates, e.Date)
+		}
+	}
+	sort.Strings(dates)
+	return dates, nil
+}
+
+// fetchPublicList 公开面拿区间内全部日记记录（含仅天气填充的空日记，由粗筛剔除）。
+func (d *DiarumSource) fetchPublicList(ctx context.Context, start, end time.Time) (*diarumPublicListResp, error) {
+	reqURL := fmt.Sprintf("%s/api/v1/diaries?start=%s&end=%s", d.cfg.BaseURL, start.Format("2006-01-02"), end.Format("2006-01-02"))
+	body, err := d.getJSON(ctx, reqURL)
+	if err != nil {
+		return nil, err
+	}
+	var lst diarumPublicListResp
+	if err := json.Unmarshal(body, &lst); err != nil {
+		return nil, fmt.Errorf("解析 diarum 公开列表响应失败: %w", err)
+	}
+	return &lst, nil
+}
+
+// publicListHasContent 公开面区间列表的粗筛：列表不回 tags/mood_states，
+// 拿得到的内容/心情分/情景任一非空即视为有内容（逐日全量后再精判，
+// 偏宽进不偏宽出——多取一天的 by-date 没有副作用，漏掉才是丢数据）。
+func publicListHasContent(it diarumPublicItem) bool {
+	return it.Mood != 0 || len(it.Scenarios) > 0 || strings.TrimSpace(it.Content) != ""
+}
+
 func (d *DiarumSource) fetchDiary(ctx context.Context, day string) (*diarumDiary, error) {
+	// 单日全量在两个面上路径不同，响应字段一致（同一个 diaryResponse 构造）。
 	reqURL := fmt.Sprintf("%s/api/v1/diaries/by-date/%s", d.cfg.BaseURL, day)
+	if d.usesPublicAPI() {
+		reqURL = fmt.Sprintf("%s/api/v1/diaries?date=%s", d.cfg.BaseURL, day)
+	}
 	body, err := d.getJSON(ctx, reqURL)
 	if err != nil {
 		return nil, err
@@ -233,11 +306,22 @@ func (d *DiarumSource) getJSON(ctx context.Context, reqURL string) ([]byte, erro
 	}
 	if code == http.StatusUnauthorized {
 		hint := "DIARUM_API_KEY 无效或已过期（JWT 30 天有效，请重新登录获取；也可改填 用户名:密码 由观复自动续期）"
-		if isJWT(d.cfg.APIKey) {
+		switch {
+		case d.usesPublicAPI():
+			hint = "DIARUM_API_KEY（API token）无效或已被重置，到 diarum 设置 → API 重新生成"
+		case isJWT(d.cfg.APIKey):
 			if exp, ok := jwtExpiry(d.cfg.APIKey); ok && time.Now().After(exp) {
-				hint = fmt.Sprintf("DIARUM_API_KEY 已于 %s 过期，请重新登录获取 JWT（或改填 用户名:密码）",
+				hint = fmt.Sprintf("DIARUM_API_KEY 已于 %s 过期，请重新登录获取 JWT（或改填 用户名:密码 / API token）",
 					exp.Local().Format("2006-01-02"))
 			}
+		default:
+			// 用户名:密码 走到这里有两种可能：认证方式被覆盖成非 JWT（凭据被原样
+			// 直发，登录根本没发生），或登录成功后新签的 JWT 仍被拒（服务端换密钥）。
+			if d.cfg.AuthMode() != config.AuthJWT {
+				hint = fmt.Sprintf("「用户名:密码」自动登录只在认证方式为 JWT 时生效，当前按 %s 直发，改回 JWT 即可", d.cfg.AuthMode())
+				break
+			}
+			hint = "登录成功但 JWT 仍被拒绝（服务端可能更换了签名密钥或用户被删，检查 diarum 部署）"
 		}
 		return nil, fmt.Errorf("diarum 鉴权失败（HTTP 401）：%s", hint)
 	}
