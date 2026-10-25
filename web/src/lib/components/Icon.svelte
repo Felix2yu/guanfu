@@ -181,5 +181,35 @@
       stroke-width="1.6"
       stroke-linecap="round"
     />
+  {:else if name === 'external'}
+    <rect
+      x="2.9"
+      y="9.1"
+      width="8"
+      height="8"
+      rx="2"
+      stroke="currentColor"
+      stroke-width="1.6"
+    />
+    <path
+      d="M8.4 11.6L16.5 3.5"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
+    <path
+      d="M11.8 3.5H16.5V8.2"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+      stroke-linejoin="round"
+    />
+  {:else if name === 'plus'}
+    <path
+      d="M10 4.2V15.8M4.2 10H15.8"
+      stroke="currentColor"
+      stroke-width="1.6"
+      stroke-linecap="round"
+    />
   {/if}
 </svg>

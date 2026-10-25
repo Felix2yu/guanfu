@@ -88,9 +88,10 @@ cd web && pnpm install && pnpm dev
 | `GUANFU_DB` | `./data/guanfu.db` | SQLite 文件路径（镜像内 `WORKDIR=/app` 且已显式设为 `/app/data/guanfu.db`，故落在数据卷上） |
 | `GUANFU_TZ` | `Asia/Shanghai` | 本地时区（local_date 归日） |
 | `GUANFU_STATIC_DIR` | `./web/dist` | 磁盘前端目录（存在则优先于内嵌） |
-| `GUANFU_SYNC_ENABLED` | `1` | 同步引擎总开关 |
+| `GUANFU_SYNC_ENABLED` | `1` | 同步引擎总开关（置 0 后手动同步也会被 409 拒绝，不会静默积压） |
 | `GUANFU_MCP_ENABLED` | `1` | 只读 MCP server（挂在 `/mcp`）总开关 |
 | `GUANFU_MCP_TOKEN` | — | 非空时 `/mcp` 要求 `Authorization: Bearer <token>`；stdio 不需要 |
+| `GUANFU_INGEST_TOKEN` | — | 手动补录端点 `POST /api/v1/ingest/event` 的可选 Bearer token：不配则与 `/api/v1/*` 同级无鉴权（内网管理面），配了则要求凭据（用于经反代暴露给快捷指令/curl） |
 | `HUOZHI_BASE_URL` / `HUOZHI_API_KEY` | — | 货殖记账（`X-API-Key` 认证） |
 | `HUOZHI_INTERVAL` | `30m` | 同步间隔 |
 | `HUOZHI_LOOKBACK_DAYS` | `90` | 首轮无游标时的回溯天数 |
@@ -163,21 +164,27 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设�
 
 ### 同步语义
 
-- 每源独立 goroutine + ticker，单源失败只记 `sources.last_error`，不影响其他源
-- cursor 持久化（huozhi 为成功同步日期），失败保留原 cursor，不会全量回溯
-- 幂等：重复拉取同一 external_id 只做更新，`/api/v1/sync/{source}` 可手动触发
+- 每源独立 goroutine + ticker，单源失败只记 `sources.last_error`，不影响其他源；
+  失败**保留**上次成功时间/条数与游标，不会全量回溯
+- cursor 持久化（多数源为成功同步日期、qingye 为秒级水位），每轮回退 3~7 天重叠窗口
+  （幂等重查），覆盖窗口外的补录与修订
+- 幂等：重复拉取同一 external_id 只做更新；upsert 仅在内容真的变化时计数，
+  `sources.last_count` 是**真实变更数**（新增+修订），不是本轮处理总数
+- 翻页触顶（防御上限）即报错且不推游标——静默截断会让窗口内未拉到的数据永久丢失
+- `/api/v1/sync/{source}` 手动触发；`/api/v1/sources` 的 `syncing` 字段标记
+  「此刻有一轮在跑」，前端轮询它判定完成
 
 ## API
 
 | 方法 | 路径 | 说明 |
 |---|---|---|
 | GET | `/api/v1/health` | 健康检查 |
-| GET | `/api/v1/events?date=YYYY-MM-DD` | 事件列表（支持 from/to/source/type/limit/offset） |
+| GET | `/api/v1/events?date=YYYY-MM-DD` | 事件列表（支持 from/to/source/type/limit/offset；`q=` 标题/摘要检索、`order=desc` 按时刻倒序） |
 | GET | `/api/v1/events/counts?date=` | 某日各源事件数 |
 | GET | `/api/v1/events/counts?from=&to=` | 范围内每日事件总数（日历热力图数据源） |
 | GET | `/api/v1/overview?from=&to=` | 概览页聚合：区间指标 `totals`、每日趋势 `days`、来源构成 `sources`（一次请求出整屏；`from`/`to` 必填） |
 | GET | `/api/v1/range` | 库日期范围（日历边界） |
-| GET | `/api/v1/sources` | 源同步状态 + 连接配置（端点、认证方式、凭据是否已配；**永不回显凭据值**） |
+| GET | `/api/v1/sources` | 源同步状态 + 连接配置（端点、认证方式、凭据是否已配、`syncing` 是否正在同步；**永不回显凭据值**） |
 | GET | `/api/v1/settings` | 设置页全量：端点清单（含 `origin`=page/env、env 基线值、凭据掩码）、通知开关、密钥来源 |
 | PUT | `/api/v1/settings/endpoints/{name}` | 保存端点（`base_url`/`auth`/`secret`/`enabled`/`interval_secs`/`extras`）；`secret` 不传=保留，传空串=清空 |
 | DELETE | `/api/v1/settings/endpoints/{name}` | 删除页面配置（= 恢复环境变量），返回删除后的视图 |
@@ -185,7 +192,9 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设�
 | POST | `/api/v1/settings/notify/apprise/test` | 测试发送，上游失败同样 200，带 `status`/`response`/`error` |
 | PUT | `/api/v1/settings/policy` | 开关项（目前只有 `notify_on_sync_failure`） |
 | GET | `/api/v1/export?from&to&format=json` | 全量或区间导出（流式 JSON，防锁定；页面右上「导出」按钮即此端点） |
-| POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部） |
+| POST | `/api/v1/import` | 导入 export JSON（按 source+external_id 幂等合并，不删除现有数据；设置页「数据维护」卡片即此端点） |
+| POST | `/api/v1/ingest/event` | 手动补录单条事件（默认无鉴权，配了 `GUANFU_INGEST_TOKEN` 则要求 Bearer；source 固定 `ingest`，external_id 幂等，重放=更新；页面「补一笔」表单即此端点） |
+| POST | `/api/v1/sync/{source}` | 手动同步（`all` = 全部；未知源 400，未启用/没配端点/引擎未启动/队列满 409） |
 | GET | `/api/v1/media/mujian/{key}` | 演出票根/封面（回源 mujian `/uploads/`） |
 | GET | `/api/v1/media/bili-history?u=` | 视频封面（回源 bili-history images/proxy） |
 | GET | `/api/v1/media/immich/{assetID}?size=` | 照片缩略图/原图（`thumbnail`/`preview`/`fullsize`/`original`） |
@@ -196,15 +205,24 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设�
 
 单页三视图，顶部段控件切换，偏好记在浏览器 localStorage（不落库）：
 
-- **当日**：这一天的时间轴，全天事件置顶、其余按时刻排，顶栏给收支合计与条数。
+- **当日**：这一天的时间轴，全天事件置顶、其余按时刻排，顶栏给收支合计与条数
+  （转账/报销不计入收支，与统计口径一致）。
 - **日历**：整月热力图，点任意一天回当日视图，月份可前后翻。
 - **时间线**：以当前日期为终点向前开窗（默认 30 天，可「加载更早 30 天」外扩），
   按日分组、日子倒序、日内时刻正序。窗口撞上服务端 1000 条上限会显式提示不完整。
+- 当日/时间线共用**类型筛选 chips**（只列当前数据里实际出现的类型）；
+  顶栏有**全库搜索**（标题/摘要子串，点结果跳到那天）与**「补一笔」手工补录表单**
+  （日期/时刻/类型/金额，走 ingest 端点，external_id 幂等）；带 `source_url` 的事件卡
+  右侧有**「在源应用中查看」深链**。
+- 手动同步不再盲等固定秒数：轮询 `/api/v1/sources` 的 `syncing` 标志等真正跑完
+  （主页视图与设置页「立刻同步」同一套判定），完成后联动刷新当前视图、总览与
+  日历热力图（含数据边界 `range`）。
 
 `/settings` 设置页：外观三选（跟随系统 / 浅色 / 深色）+ 字号四档（小 / 标准 / 大 / 特大）+
 **可编辑**的数据源总览
 （行内展开改地址 / 认证方式 / 凭据 / 间隔 / 启用，带「保存」「测试连通」「恢复环境变量」）
-+ 通知渠道卡（Apprise，含「保存并测试」）+ 同步失败推送开关。
++ 数据维护卡（上传 export JSON 幂等导入）+ 通知渠道卡（Apprise，含「保存并测试」）
++ 同步失败推送开关。
 表格行首徽标标明配置来源（`页面` / `env`）。明暗走
 `<html class="dark">`，`app.html` 里一段内联脚本在首屏前定色，避免深色模式白闪。
 字号四档通过 `--gf-text-scale` 只缩放文字，卡片间距与图标尺寸不变；偏好键
@@ -228,8 +246,8 @@ web/                Svelte 5 + SvelteKit 3 SPA（当日/日历/时间线 + 设�
 
 - 日期只认 `YYYY-MM-DD`，`2026-10-1`、RFC3339、unix 秒一律拒绝并回示例；
 - 金额单位一律**分**（`amount_cents`），返回体自带 `amount_unit`；
-- 收支口径 `totals_rule`：`detail.type == "income"` 记收入，其余带金额事件记支出
-  （huozhi 的转账/报销因此也进支出，与网页时间轴顶栏同口径）；
+- 收支口径 `totals_rule`：`detail.type == "income"` 记收入；`transfer`/`reimburse`
+  （转账/报销，内部资金划转）单独进 `transfer_cents`、不计入收支；其余带金额事件记支出；
 - 币种分桶返回，不同币种绝不加进同一个数；
 - 明细带 `returned`/`truncated`，`limit` 截断时不会让模型把部分当全部；
 - 返回体不含 `detail_json` 与媒体 URL（长尾字段动辄几 KB，图片须走观复代理）。

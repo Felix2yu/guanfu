@@ -348,8 +348,8 @@ func handleSources(st *store.Store) server.ToolHandlerFunc {
 }
 
 // totalsRule 与 store.Stats 的收支判定同源，写进返回值以免 LLM 自行脑补口径。
-const totalsRule = "income 取 detail.type==income 的金额；其余带金额事件一律计为 expense，" +
-	"故 huozhi 的转账/报销也进 expense（与网页时间轴顶栏同口径）"
+const totalsRule = "income 取 detail.type==income 的金额；detail.type 为 transfer/reimburse（转账/报销，" +
+	"内部资金划转）单独进 transfer、不计入收支；其余带金额事件计为 expense"
 
 // dayEvents 挑出全天精度事件，供「今天有没有写日记/记了几笔账」这类问题直接引用。
 func dayEvents(list []compactEvent) []compactEvent {

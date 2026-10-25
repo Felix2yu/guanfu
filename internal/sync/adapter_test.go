@@ -177,11 +177,27 @@ func TestTriggerResults(t *testing.T) {
 	reg := NewRegistry()
 	reg.Register(a)
 
-	// 故意不 Start：没有消费者，才能稳定测「队列满」这条以前被静默吞掉的分支。
-	e := NewEngine(st, reg, func(string) bool { return true })
-	if got := e.Trigger("nope"); got != TriggerUnknown {
-		t.Fatalf("未注册的源名应 TriggerUnknown，实际 %d", got)
+	// 引擎没启动（GUANFU_SYNC_ENABLED=0 的形态）：触发队列没有消费者，
+	// 受理了只会静默积压——必须直接拒掉，让 API 如实回 409。
+	e0 := NewEngine(st, reg, func(string) bool { return true })
+	if got := e0.Trigger("a"); got != TriggerNotStarted {
+		t.Fatalf("引擎未启动应 TriggerNotStarted，实际 %d", got)
 	}
+	if got := e0.Trigger("*"); got != TriggerNotStarted {
+		t.Fatalf("引擎未启动时 * 也应 TriggerNotStarted，实际 %d", got)
+	}
+
+	// 队列满：用阻塞适配器让 runManual 卡在第一轮，后续触发才能稳定排满队列。
+	a.block = true
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	e := NewEngine(st, reg, func(string) bool { return true })
+	e.Start(ctx)
+	<-a.started // respawn 的启动首轮已进入 Sync
+	if got := e.Trigger("a"); got != TriggerQueued {
+		t.Fatalf("启动后应受理，实际 %d", got)
+	}
+	<-a.started // runManual 消费并进入同一轮阻塞
 	for i := 0; i < cap(e.trigger); i++ {
 		if got := e.Trigger("a"); got != TriggerQueued {
 			t.Fatalf("队列第 %d 位应受理，实际 %d", i, got)
@@ -192,11 +208,17 @@ func TestTriggerResults(t *testing.T) {
 	}
 
 	// 注册了但没启用 → 拒收；"*" 在没有任何启用源时同样拒收。
-	e2 := NewEngine(st, reg, func(string) bool { return false })
-	if got := e2.Trigger("a"); got != TriggerDisabled {
+	ctx3, cancel3 := context.WithCancel(context.Background())
+	defer cancel3()
+	e3 := NewEngine(st, reg, func(string) bool { return false })
+	e3.Start(ctx3)
+	if got := e3.Trigger("nope"); got != TriggerUnknown {
+		t.Fatalf("未注册的源名应 TriggerUnknown，实际 %d", got)
+	}
+	if got := e3.Trigger("a"); got != TriggerDisabled {
 		t.Fatalf("未启用的源应 TriggerDisabled，实际 %d", got)
 	}
-	if got := e2.Trigger("*"); got != TriggerDisabled {
+	if got := e3.Trigger("*"); got != TriggerDisabled {
 		t.Fatalf("没有启用源时 * 应 TriggerDisabled，实际 %d", got)
 	}
 }
@@ -216,8 +238,8 @@ func TestOnFailureOnlyOnTransition(t *testing.T) {
 	case <-time.After(50 * time.Millisecond):
 	}
 
-	// 2) 有行且 last_error 为空（此前正常）→ 通知。
-	if err := st.SaveSourceState("huozhi", true, 0, "", time.Now().Unix(), "", 3); err != nil {
+	// 2) 有行且 last_error 为空（此前正常）→ 通知；同时保留上次成功时间与条数。
+	if err := st.SaveSourceState("huozhi", true, 1800, "2026-10-10", time.Now().Unix()-60, "", 3); err != nil {
 		t.Fatal(err)
 	}
 	e.recordError("huozhi", errors.New("boom-2"))
@@ -228,6 +250,13 @@ func TestOnFailureOnlyOnTransition(t *testing.T) {
 		}
 	case <-time.After(time.Second):
 		t.Fatal("由正常转失败应通知")
+	}
+	got, gerr := st.GetSourceState("huozhi")
+	if gerr != nil {
+		t.Fatal(gerr)
+	}
+	if got.LastSyncAt == 0 || got.LastCount == 0 || got.Cursor != "2026-10-10" {
+		t.Fatalf("失败态应保留上次成功时间/条数/游标: %+v", got)
 	}
 
 	// 3) 仍在失败态 → 不重复通知。

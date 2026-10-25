@@ -16,13 +16,17 @@
     sourceLabel,
     todayStr,
     triggerSync,
+    TYPE_LABEL,
+    waitSyncDone,
     type Event,
     type SourceState
   } from '#lib/api.ts';
   import EventCard from '#lib/components/EventCard.svelte';
   import Heatmap from '#lib/components/Heatmap.svelte';
   import Icon from '#lib/components/Icon.svelte';
+  import IngestDialog from '#lib/components/IngestDialog.svelte';
   import Overview from '#lib/components/Overview.svelte';
+  import SearchBox from '#lib/components/SearchBox.svelte';
   import TopBar from '#lib/components/TopBar.svelte';
   import { setView, ui, VIEW_LABELS, type ViewMode } from '#lib/ui.svelte.ts';
 
@@ -47,6 +51,13 @@
   let tlLoading = $state(false);
   let tlTruncated = $state(false);
 
+  // 类型筛选：当日与时间线共用；空串 = 全部。切视图/换日期时清掉——
+  // 两个视图、两天的类型集合不同，残留一个不存在的类型只会得到空列表。
+  let typeFilter = $state('');
+
+  // 「补一笔」手工补录对话框。
+  let showIngest = $state(false);
+
   onMount(() => {
     (async () => {
       try {
@@ -64,6 +75,7 @@
     if (ui.view !== 'calendar') return;
     const month = heatMonth;
     void range; // 数据边界变化时（首次加载完）重取
+    void refreshTick; // 同步完成后（refreshTick++）重取：新增事件要立即反映到格子
     fetchCountsRange(monthStart(month), monthEnd(month))
       .then((c) => (heatCounts = c))
       .catch(() => (heatCounts = {}));
@@ -101,6 +113,7 @@
   async function goto(d: string) {
     if (d === date) return;
     date = d;
+    typeFilter = '';
     heatMonth = monthOf(d);
     await load(d);
   }
@@ -116,45 +129,80 @@
 
   function pickView(v: ViewMode) {
     setView(v);
+    typeFilter = '';
   }
 
+  // 轮询等目标源真正跑完（见 api.ts waitSyncDone 的宽限说明），
+  // 顺带把最新源状态写回页面：同步进行中 chips/状态就能实时跳动。
   async function sync(source: string) {
     syncing = source;
     try {
       await triggerSync(source);
-      // 同步是异步的，等 3 秒后刷新当前视图的数据。
-      setTimeout(async () => {
-        await load(date);
-        sources = await fetchSources();
-        if (ui.view === 'timeline') tlEvents = await fetchEventsRange(tlFrom, date, 1000);
-        syncing = '';
-        refreshTick += 1;
-      }, 3000);
+      await waitSyncDone(source, { onUpdate: (list) => (sources = list) });
+      await load(date);
+      // range 只在挂载时拉过一次；同步可能带来更早/更晚的数据，边界要跟着刷新。
+      range = await fetchRange().catch(() => range);
+      sources = await fetchSources().catch(() => sources);
+      if (ui.view === 'timeline')
+        tlEvents = await fetchEventsRange(tlFrom, date, 1000).catch(() => tlEvents);
+      refreshTick += 1; // 通知总览与日历热力图重取
     } catch (e) {
       error = String(e);
+    } finally {
+      // 无论哪一步失败都必须解锁，否则所有同步按钮会永久禁用。
       syncing = '';
     }
   }
 
+  // 补录成功后的刷新：落在当前日期就重载当日，落在别的日期就跳过去看。
+  async function afterIngest(d: string) {
+    showIngest = false;
+    if (d !== date) {
+      await goto(d);
+    } else {
+      await load(date);
+    }
+    range = await fetchRange().catch(() => range);
+    refreshTick += 1;
+  }
+
   // 全天事件置顶展示（日记/健康汇总等无具体时刻），其余按时刻排列。
-  const sorted = $derived([
-    ...events.filter((e) => e.time_precision === 'day'),
-    ...events
-      .filter((e) => e.time_precision !== 'day')
-      .sort((a, b) => a.occurred_at - b.occurred_at)
-  ]);
+  const sorted = $derived.by(() => {
+    const list = typeFilter ? events.filter((e) => e.event_type === typeFilter) : events;
+    return [
+      ...list.filter((e) => e.time_precision === 'day'),
+      ...list
+        .filter((e) => e.time_precision !== 'day')
+        .sort((a, b) => a.occurred_at - b.occurred_at)
+    ];
+  });
   const incomeTotal = $derived(sumBy(events, 'income'));
   const expenseTotal = $derived(sumBy(events, 'expense'));
   const enabledSources = $derived(sources.filter((s) => s.enabled));
   const sourceErrors = $derived(enabledSources.filter((s) => s.last_error).length);
 
+  // 类型筛选的候选集：跟着当前视图的数据走。
+  const dayTypes = $derived([...new Set(events.map((e) => e.event_type))]);
+  const tlTypes = $derived([...new Set(tlEvents.map((e) => e.event_type))]);
+  const activeTypes = $derived(ui.view === 'timeline' ? tlTypes : dayTypes);
+
+  function typeChipCls(active: boolean): string {
+    return `rounded-full border px-2 py-0.5 transition-colors ${
+      active
+        ? 'border-accent bg-accent text-accent-ink'
+        : 'border-line bg-surface text-ink-2 hover:border-line-strong hover:text-ink'
+    }`;
+  }
+
   function sumBy(list: Event[], kind: 'income' | 'expense'): number {
     return list
-      .filter(
-        (e) =>
-          e.event_type === 'transaction' &&
-          (kind === 'income' ? e.detail?.type === 'income' : e.detail?.type !== 'income')
-      )
+      .filter((e) => {
+        if (e.event_type !== 'transaction' || !e.amount_cents) return false;
+        const t = e.detail?.type;
+        // 转账/报销是内部资金划转，与后端 stats 口径一致：不计入收支。
+        if (t === 'transfer' || t === 'reimburse') return false;
+        return kind === 'income' ? t === 'income' : t !== 'income';
+      })
       .reduce((acc, e) => acc + (e.amount_cents ?? 0), 0);
   }
 
@@ -162,8 +210,9 @@
   const tlGroups = $derived.by(() => {
     // 用普通对象而非 Map：'YYYY-MM-DD' 不是整数下标键，Object.entries 会保留插入顺序，
     // 免掉 svelte/prefer-svelte-reactivity 的告警（这里也不需要响应式容器）。
+    const list = typeFilter ? tlEvents.filter((e) => e.event_type === typeFilter) : tlEvents;
     const byDay: Record<string, Event[]> = {};
-    for (const e of [...tlEvents].sort((a, b) => b.occurred_at - a.occurred_at)) {
+    for (const e of [...list].sort((a, b) => b.occurred_at - a.occurred_at)) {
       (byDay[e.local_date] ??= []).push(e);
     }
     return Object.entries(byDay).map(([day, list]) => ({
@@ -208,7 +257,24 @@
         <!-- eslint-enable svelte/no-navigation-without-resolve -->
       {/if}
     {:else}
-      <div class="flex items-center gap-1">
+      <div class="flex items-center gap-2">
+        <button
+          type="button"
+          class="flex h-9 items-center gap-1.5 rounded-[9px] border border-line bg-surface px-2.5 fs-125 text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+          onclick={() => (showIngest = true)}
+          aria-label="补一笔（手工录入事件）"
+          title="补一笔（手工录入事件）"
+        >
+          <Icon name="plus" size={14} />
+          <span class="hidden sm:inline">补一笔</span>
+        </button>
+        <SearchBox
+          onpick={(d: string) => {
+            pickView('day');
+            void goto(d);
+          }}
+        />
+        <div class="flex items-center gap-1">
         <button
           type="button"
           class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
@@ -241,6 +307,7 @@
             onclick={() => goto(todayStr())}>今天</button
           >
         {/if}
+        </div>
       </div>
     {/if}
   </TopBar>
@@ -265,6 +332,27 @@
           {#if expenseTotal > 0}<span class="text-neg">−{fmtMoney(expenseTotal)}</span>{/if}
           <span class="text-ink-3">{events.length} 条</span>
         </span>
+      </div>
+    {/if}
+
+    <!-- 类型筛选：当日/时间线共用，只列当前数据里实际出现的类型；多于一种才有筛选价值。 -->
+    {#if ui.view !== 'calendar' && activeTypes.length > 1}
+      <div class="mb-3 flex flex-wrap items-center gap-1.5 fs-11">
+        <span class="text-ink-3">类型</span>
+        <button
+          type="button"
+          class={typeChipCls(typeFilter === '')}
+          onclick={() => (typeFilter = '')}>全部</button
+        >
+        {#each activeTypes as t (t)}
+          <button
+            type="button"
+            class={typeChipCls(typeFilter === t)}
+            onclick={() => (typeFilter = typeFilter === t ? '' : t)}
+          >
+            {TYPE_LABEL[t] ?? t}
+          </button>
+        {/each}
       </div>
     {/if}
 
@@ -407,4 +495,8 @@
       {/if}
     {/if}
   </div>
+{/if}
+
+{#if showIngest}
+  <IngestDialog {date} onclose={() => (showIngest = false)} onsaved={afterIngest} />
 {/if}

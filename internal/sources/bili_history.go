@@ -15,7 +15,8 @@ import (
 )
 
 // biliOverlapDays 每次增量同步回退的天数（B 站历史偶发补录）。
-const biliOverlapDays = 2
+// 与其余日期游标源统一为 3 天。
+const biliOverlapDays = 3
 
 // BiliHistorySource 拾帧集（bili-history）观看历史适配器。
 //
@@ -126,8 +127,12 @@ func (b *BiliHistorySource) Sync(ctx context.Context, cursor string, upsert func
 		if len(records) < pageSize {
 			break
 		}
-		if page > 100 { // 防御：单轮 1 万条上限
-			break
+		if page > 100 {
+			// 防御上限（单轮 1 万条）。触顶说明窗口内还有未拉取的记录，
+			// 报错让游标停在原地——静默跳过会永久丢失。
+			return "", total, fmt.Errorf(
+				"bili-history 翻页达 100 页防御上限（%s~%s），可能有未拉取的观看记录；中止本轮且不推进游标",
+				start.Format("2006-01-02"), end.Format("2006-01-02"))
 		}
 	}
 	return newCursor, total, nil

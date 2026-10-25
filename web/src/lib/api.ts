@@ -38,6 +38,8 @@ export interface SourceState {
   last_sync_at: number;
   last_error: string;
   last_count: number;
+  /** 此刻有一轮同步在跑（引擎标记），手动同步的完成判定靠轮询它 */
+  syncing?: boolean;
   // 连接配置（设置页用）。后端只给状态与 env 变量名，永不下发凭据值。
   base_url?: string;
   base_url_env?: string;
@@ -118,12 +120,19 @@ export function fetchRange(): Promise<{ min: string; max: string }> {
   return get<{ min: string; max: string }>('/api/v1/range');
 }
 
+/** 全库搜索：标题/摘要子串匹配（按字面量），按时刻倒序（最近在前）。 */
+export function searchEvents(q: string, limit = 20): Promise<Event[]> {
+  const params = new URLSearchParams({ q, limit: String(limit), order: 'desc' });
+  return get<Event[]>(`/api/v1/events?${params.toString()}`);
+}
+
 // ---------- 总览聚合 ----------
 
-/** 单一币种下的收支合计（分）。口径与时间轴顶栏一致：detail.type==income 记收入，其余带金额记支出。 */
+/** 单一币种下的收支合计（分）。口径与后端 stats 一致：type==income 记收入；transfer/reimburse（转账/报销）单独记 transfer、不计收支；其余带金额记支出。 */
 export interface MoneyTotals {
   income_cents: number;
   expense_cents: number;
+  transfer_cents: number;
 }
 
 /** 一个聚合分组（按天或按来源）。 */
@@ -256,6 +265,60 @@ export function triggerSync(source: string): Promise<void> {
   return request<void>('POST', `/api/v1/sync/${encodeURIComponent(source)}`).then(() => {});
 }
 
+/** 导入结果：total 收到的记录数，changed 新增/有变化数，skipped 被跳过的记录及原因。 */
+export interface ImportResult {
+  total: number;
+  changed: number;
+  skipped: { source: string; external_id: string; reason: string }[];
+}
+
+/** 导入 /api/v1/export 的原样 JSON（按 source+external_id upsert，不删除现有数据）。 */
+export function importEvents(payload: unknown): Promise<ImportResult> {
+  return request<ImportResult>('POST', '/api/v1/import', payload);
+}
+
+/** 补一笔表单提交体。external_id 幂等：同 id 重放 = 更新同一条。 */
+export interface IngestInput {
+  external_id: string;
+  event_type: string;
+  date: string;
+  time?: string;
+  title: string;
+  summary?: string;
+  amount_cents?: number;
+}
+
+/** 手工补录单条事件（source 固定 ingest；返回是否产生真实变更）。 */
+export function ingestEvent(input: IngestInput): Promise<{ changed: boolean }> {
+  return request<{ changed: boolean }>('POST', '/api/v1/ingest/event', input);
+}
+
+/**
+ * 轮询源状态直到目标源同步结束（syncing 从 true 变回 false）。
+ * 触发请求在队列里排队时标志还没置位，给 graceMs 宽限：宽限内没见到
+ * syncing=true 就按已结束处理（引擎禁用、队列卡住等情形）。
+ * onUpdate 每轮带上最新状态（页面让 chips/状态卡实时跳动）。
+ * 返回最后一次拿到的列表；网络持续失败时为 null。
+ */
+export async function waitSyncDone(
+  target: string,
+  opts: { maxMs?: number; graceMs?: number; intervalMs?: number; onUpdate?: (list: SourceState[]) => void } = {}
+): Promise<SourceState[] | null> {
+  const { maxMs = 120_000, graceMs = 8_000, intervalMs = 1_200, onUpdate } = opts;
+  const started = Date.now();
+  let seen = false;
+  for (;;) {
+    const list = await fetchSources().catch(() => null);
+    if (list && onUpdate) onUpdate(list);
+    const busy = list?.filter((s) => s.enabled && s.syncing) ?? [];
+    const targetBusy = target === 'all' ? busy.length > 0 : busy.some((s) => s.name === target);
+    if (targetBusy) seen = true;
+    else if (seen || Date.now() - started > graceMs) return list;
+    if (Date.now() - started >= maxMs) return list;
+    await new Promise((r) => setTimeout(r, intervalMs));
+  }
+}
+
 // 源展示名与主题色（Tailwind 任意值类名，浅色/深色均克制）。
 export const SOURCE_META: Record<string, { label: string; dot: string; text: string }> = {
   huozhi: { label: '记账', dot: 'bg-rose-500', text: 'text-rose-600 dark:text-rose-400' },
@@ -272,7 +335,8 @@ export const SOURCE_META: Record<string, { label: string; dot: string; text: str
   qiansi: { label: '人情', dot: 'bg-orange-500', text: 'text-orange-600 dark:text-orange-400' },
   shenshi: { label: '任务', dot: 'bg-lime-600', text: 'text-lime-700 dark:text-lime-400' },
   liuxia: { label: '天象', dot: 'bg-indigo-500', text: 'text-indigo-600 dark:text-indigo-400' },
-  qingye: { label: '园艺', dot: 'bg-teal-600', text: 'text-teal-700 dark:text-teal-400' }
+  qingye: { label: '园艺', dot: 'bg-teal-600', text: 'text-teal-700 dark:text-teal-400' },
+  ingest: { label: '补录', dot: 'bg-zinc-500', text: 'text-ink-2' }
 };
 
 /**
@@ -290,7 +354,8 @@ export const SOURCE_COLOR: Record<string, string> = {
   'bili-history': 'var(--src-8)',
   shenshi: 'var(--src-9)',
   liuxia: 'var(--src-10)',
-  qingye: 'var(--src-11)'
+  qingye: 'var(--src-11)',
+  ingest: 'var(--gf-ink-2)' // 补录是伪源（不经同步调度），用中性色不入环图配色
 };
 
 /** 源的展示名（「记账 · 货殖」这种两段式由调用方自己拼）。 */
@@ -318,7 +383,8 @@ export const TYPE_LABEL: Record<string, string> = {
   habit_check: '打卡',
   sky_forecast: '霞光',
   plant_diary: '园艺',
-  plant_care: '养护'
+  plant_care: '养护',
+  note: '补录'
 };
 
 export function fmtTime(ts: number): string {

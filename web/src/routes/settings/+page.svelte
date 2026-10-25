@@ -5,8 +5,10 @@
     AUTH_SHORT_LABELS,
     fetchSources,
     fmtAgo,
+    importEvents,
     sourceLabel,
     type AuthKind,
+    type ImportResult,
     type SourceState
   } from '#lib/api.ts';
   import {
@@ -151,6 +153,26 @@
   };
 
   const secretSourceLabel = $derived(SECRET_SOURCE_LABELS[conf?.secret_source ?? ''] ?? '未知');
+
+  // 数据导入：上传 /api/v1/export 下载的 JSON，按 (source, external_id) 幂等合并。
+  let importing = $state(false);
+  let importResult = $state<ImportResult | null>(null);
+
+  async function onImportFile(e: { currentTarget: HTMLInputElement }) {
+    const file = e.currentTarget.files?.[0];
+    e.currentTarget.value = ''; // 清掉选择，同名文件重选也能再次触发
+    if (!file) return;
+    importing = true;
+    importResult = null;
+    error = '';
+    try {
+      importResult = await importEvents(JSON.parse(await file.text()));
+    } catch (err) {
+      error = String(err);
+    } finally {
+      importing = false;
+    }
+  }
 </script>
 
 <svelte:head>
@@ -327,6 +349,46 @@
           </li>
         </ul>
       </details>
+    {/if}
+  </Section>
+
+  <Section title="数据维护" meta="迁移实例 · 误清后回填">
+    <Row
+      title="导入导出 JSON"
+      desc="上传「导出 JSON」下载的文件；按 source+external_id 幂等合并，不会删除现有数据"
+    >
+      <div class="flex flex-wrap items-center gap-2">
+        <label class="btn cursor-pointer" class:opacity-50={importing}>
+          {importing ? '导入中…' : '选择文件导入'}
+          <input
+            type="file"
+            accept="application/json,.json"
+            class="hidden"
+            disabled={importing}
+            onchange={onImportFile}
+          />
+        </label>
+        {#if importResult}
+          <span
+            class="fs-12 {importResult.skipped.length > 0 ? 'text-ink-2' : 'text-pos'}"
+            role="status"
+          >
+            共 {importResult.total} 条 · 更新 {importResult.changed} 条{importResult.skipped.length
+              ? ` · 跳过 ${importResult.skipped.length} 条`
+              : ''}
+          </span>
+        {/if}
+      </div>
+    </Row>
+    {#if importResult && importResult.skipped.length > 0}
+      <ul class="space-y-1 px-4 pb-3 fs-11 text-ink-3">
+        {#each importResult.skipped.slice(0, 10) as sk, i (i)}
+          <li>{sk.source || '（无源）'} · {sk.external_id || '（无 ID）'}：{sk.reason}</li>
+        {/each}
+        {#if importResult.skipped.length > 10}
+          <li>… 其余 {importResult.skipped.length - 10} 条从略</li>
+        {/if}
+      </ul>
     {/if}
   </Section>
 

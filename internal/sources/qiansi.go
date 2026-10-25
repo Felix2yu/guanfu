@@ -236,10 +236,12 @@ func (q *QiansiSource) fetchEvents(ctx context.Context, from, to string) ([]qian
 		}
 		all = append(all, batch...)
 		if len(batch) < qiansiPageSize {
-			break
+			return all, nil
 		}
 	}
-	return all, nil
+	// 翻满上限仍未到末页：窗口内还有数据没拉到，报错让游标停在原地。
+	return all, fmt.Errorf("qiansi 往来事件翻页达 %d 页防御上限（%s~%s），可能有未拉取的记录；中止本轮且不推进游标",
+		qiansiMaxPages, from, to)
 }
 
 // fetchGifts 区间礼金（kind=gift，自动翻页）。
@@ -258,10 +260,11 @@ func (q *QiansiSource) fetchGifts(ctx context.Context, from, to string) ([]qians
 		}
 		all = append(all, batch...)
 		if len(batch) < qiansiPageSize {
-			break
+			return all, nil
 		}
 	}
-	return all, nil
+	return all, fmt.Errorf("qiansi 礼金翻页达 %d 页防御上限（%s~%s），可能有未拉取的记录；中止本轮且不推进游标",
+		qiansiMaxPages, from, to)
 }
 
 // fetchAnniversaries 全量纪念日。

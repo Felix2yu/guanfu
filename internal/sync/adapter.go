@@ -81,6 +81,11 @@ type Engine struct {
 	// parent 是 Start 收到的根 ctx；cancel 是当前这批调度 goroutine 的子 ctx。
 	parent context.Context
 	cancel context.CancelFunc
+
+	// syncing 标记「这一源此刻有一轮同步在跑」，供 /api/v1/sources 下发给
+	// 前端轮询（手动同步的完成判定靠它，不再盲等固定秒数）。
+	syncMu  sync.Mutex
+	syncing map[string]bool
 }
 
 // NewEngine 创建引擎。enabled 决定哪些源参与调度（由 config 提供）。
@@ -181,16 +186,25 @@ func (e *Engine) isEnabled(name string) bool {
 type TriggerResult int
 
 const (
-	TriggerQueued   TriggerResult = iota // 已排进触发队列
-	TriggerUnknown                       // 注册表里没有这个源
-	TriggerDisabled                      // 有这个名字，但当前不参与调度
-	TriggerBusy                          // 队列已满，本次请求被丢弃
+	TriggerQueued    TriggerResult = iota // 已排进触发队列
+	TriggerUnknown                        // 注册表里没有这个源
+	TriggerDisabled                       // 有这个名字，但当前不参与调度
+	TriggerBusy                           // 队列已满，本次请求被丢弃
+	TriggerNotStarted                     // 引擎没 Start 过（GUANFU_SYNC_ENABLED=0），触发队列没有消费者
 )
 
 // Trigger 请求手动同步某源（"*" 表示全部启用源）。非阻塞。
 // 受理判定读当前注册表快照；若判定后到消费前发生了 Reconfigure，
 // runManual 会按新注册表再解析一次，不会去同步已经不存在的源。
 func (e *Engine) Trigger(name string) TriggerResult {
+	// 引擎没启动（同步总开关关闭）时触发队列没有消费者，受理了也只是
+	// 静默积压——必须在这里拒绝，让 API 层如实回 409 而不是假装已触发。
+	e.mu.RLock()
+	started := e.parent != nil
+	e.mu.RUnlock()
+	if !started {
+		return TriggerNotStarted
+	}
 	reg := e.currentRegistry()
 	if name == "*" {
 		any := false
@@ -228,6 +242,7 @@ func (e *Engine) Stop() {
 }
 
 func (e *Engine) runManual(ctx context.Context) {
+	defer e.clearSyncing() // 引擎停机时清掉标记，别让 API 读到僵尸状态
 	for {
 		select {
 		case <-ctx.Done():
@@ -241,14 +256,55 @@ func (e *Engine) runManual(ctx context.Context) {
 					adapters = []Adapter{a}
 				}
 			}
+			// "*" 是串行执行的：两源之间会出现「无人在跑」的瞬间，轮询方会
+			// 误判整批已完成。先把整批都标记上，跑完一个清一个。
+			if name == "*" {
+				for _, a := range adapters {
+					if e.isEnabled(a.Name()) {
+						e.markSyncing(a.Name(), true)
+					}
+				}
+			}
 			for _, a := range adapters {
 				if !e.isEnabled(a.Name()) {
+					e.markSyncing(a.Name(), false)
 					continue
 				}
 				e.syncOnce(ctx, a)
 			}
 		}
 	}
+}
+
+// markSyncing 维护单源的「同步进行中」标记。
+func (e *Engine) markSyncing(name string, on bool) {
+	e.syncMu.Lock()
+	defer e.syncMu.Unlock()
+	if e.syncing == nil {
+		e.syncing = map[string]bool{}
+	}
+	if on {
+		e.syncing[name] = true
+	} else {
+		delete(e.syncing, name)
+	}
+}
+
+// Syncing 返回当前正在同步的源集合快照。
+func (e *Engine) Syncing() map[string]bool {
+	e.syncMu.Lock()
+	defer e.syncMu.Unlock()
+	out := make(map[string]bool, len(e.syncing))
+	for k := range e.syncing {
+		out[k] = true
+	}
+	return out
+}
+
+func (e *Engine) clearSyncing() {
+	e.syncMu.Lock()
+	e.syncing = map[string]bool{}
+	e.syncMu.Unlock()
 }
 
 func (e *Engine) runSource(ctx context.Context, a Adapter, syncNow bool) {
@@ -277,13 +333,15 @@ func (e *Engine) runSource(ctx context.Context, a Adapter, syncNow bool) {
 
 // syncOnce 执行一轮同步并落库状态。失败不 panic，只记录。
 func (e *Engine) syncOnce(ctx context.Context, a Adapter) {
+	e.markSyncing(a.Name(), true)
+	defer e.markSyncing(a.Name(), false)
 	cursor, err := e.store.GetSourceCursor(a.Name())
 	if err != nil {
 		e.recordError(a.Name(), err)
 		return
 	}
 	count := 0
-	newCursor, n, err := a.Sync(ctx, cursor, func(ev *model.Event) error {
+	newCursor, _, err := a.Sync(ctx, cursor, func(ev *model.Event) error {
 		changed, err := e.store.UpsertEvent(ev)
 		if err != nil {
 			return err
@@ -304,14 +362,22 @@ func (e *Engine) syncOnce(ctx context.Context, a Adapter) {
 		newCursor = cursor
 	}
 	intervalSecs := int(a.Interval().Seconds())
-	_ = e.store.SaveSourceState(a.Name(), e.isEnabled(a.Name()), intervalSecs, newCursor, time.Now().Unix(), "", n)
+	// last_count 存真实变更数（新增+内容有变化），不是适配器返回的处理总数——
+	// 重复拉同一批数据时它为 0，前端「新增 N 条」才不会虚报。
+	_ = e.store.SaveSourceState(a.Name(), e.isEnabled(a.Name()), intervalSecs, newCursor, time.Now().Unix(), "", count)
 }
 
 func (e *Engine) recordError(name string, err error) {
 	// 先读后写，保留原 cursor，避免失败一次就触发全量回溯。
 	cur, _ := e.store.GetSourceCursor(name)
 	prev, prevErr := e.store.GetSourceState(name)
-	_ = e.store.SaveSourceState(name, e.isEnabled(name), 0, cur, 0, err.Error(), 0)
+	// 同时保留上次成功同步的时间/条数与间隔：失败只该覆盖 last_error，
+	// 抹掉「上次成功于何时」会让源状态页从此显示「从未同步」。
+	lastSync, lastCount, interval := int64(0), 0, 0
+	if prevErr == nil {
+		lastSync, lastCount, interval = prev.LastSyncAt, prev.LastCount, prev.IntervalSecs
+	}
+	_ = e.store.SaveSourceState(name, e.isEnabled(name), interval, cur, lastSync, err.Error(), lastCount)
 
 	// 只在「由正常转失败」时通知：持续失败不重复轰炸（Dispatcher 那层还有
 	// 时间窗去重，这里先挡掉最常见的重复来源）。从没跑过的源不通知——

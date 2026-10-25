@@ -8,6 +8,7 @@
     type Event,
     type MediaRef
   } from '../api.ts';
+  import Icon from './Icon.svelte';
 
   let { event }: { event: Event } = $props();
 
@@ -251,6 +252,19 @@
     {/if}
   </div>
 
+  {#if event.source_url}
+    <!-- 深链出口：跳回源应用的原件（账单详情/演出记录/日记正文……）。 -->
+    <a
+      href={event.source_url}
+      target="_blank"
+      rel="noopener noreferrer"
+      class="shrink-0 self-center text-ink-3 transition-colors hover:text-ink"
+      aria-label="在源应用中查看"
+      title="在源应用中查看"
+    >
+      <Icon name="external" size={13} />
+    </a>
+  {/if}
   <span class="shrink-0 fs-11 text-ink-3">
     {#if typeLabel === meta.label}{typeLabel}{:else}{typeLabel} · {meta.label}{/if}
   </span>

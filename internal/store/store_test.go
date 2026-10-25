@@ -51,6 +51,39 @@ func TestUpsertEventIdempotent(t *testing.T) {
 	}
 }
 
+func TestUpsertEventChangeDetection(t *testing.T) {
+	st := openTemp(t)
+	e := &model.Event{
+		Source: "huozhi", ExternalID: "900", EventType: model.EventTransaction,
+		TimePrecision: model.PrecisionSecond, OccurredAt: 1000, LocalDate: "2026-10-14",
+		Title: "午饭", AmountCents: 2350, Currency: "CNY",
+		Detail: map[string]any{"type": "expense"},
+	}
+	changed, err := st.UpsertEvent(e)
+	if err != nil || !changed {
+		t.Fatalf("首次写入应 changed=true: %v, %v", changed, err)
+	}
+	before, _ := st.ListEvents(EventQuery{Date: "2026-10-14"})
+	// 内容完全相同的重放：不算变更，updated_at 也不该被碰。
+	changed, err = st.UpsertEvent(e)
+	if err != nil {
+		t.Fatalf("重放失败: %v", err)
+	}
+	if changed {
+		t.Fatal("重复写入同一内容不应计为变更，否则「新增 N 条」会虚报")
+	}
+	after, _ := st.ListEvents(EventQuery{Date: "2026-10-14"})
+	if after[0].UpdatedAt != before[0].UpdatedAt {
+		t.Fatal("无变化时 updated_at 不应被更新")
+	}
+	// 修订标题 → 变更。
+	e.Title = "午饭（改）"
+	changed, err = st.UpsertEvent(e)
+	if err != nil || !changed {
+		t.Fatalf("修订后应 changed=true: %v, %v", changed, err)
+	}
+}
+
 func TestListEventsFilters(t *testing.T) {
 	st := openTemp(t)
 	_ = mustUpsert(t, st, &model.Event{Source: "huozhi", ExternalID: "1", EventType: model.EventTransaction, OccurredAt: 100, LocalDate: "2026-10-13", Title: "a"})

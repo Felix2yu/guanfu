@@ -31,7 +31,7 @@ func newTestServer(t *testing.T, sources map[string]config.SourceConfig) (*Serve
 		t.Fatalf("初始化配置层失败: %v", err)
 	}
 	engine := sync.NewEngine(st, sync.NewRegistry(), func(string) bool { return false })
-	return NewServer(st, engine, mgr), st
+	return NewServer(st, engine, mgr, ""), st
 }
 
 func seedEvent(t *testing.T, st *store.Store, source, extID, date string, media []model.MediaRef) {

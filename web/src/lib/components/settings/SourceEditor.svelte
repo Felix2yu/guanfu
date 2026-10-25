@@ -3,7 +3,7 @@
   //
   // 凭据三态：输入框有值 = 设置新值；点「清除」= 显式清空；两者都没有 = 保留原值。
   // 页面永远拿不到明文（后端只回掩码），所以不能把已存值回填到输入框里。
-  import { AUTH_LABELS, triggerSync, type AuthKind } from '#lib/api.ts';
+  import { AUTH_LABELS, triggerSync, waitSyncDone, type AuthKind } from '#lib/api.ts';
   import {
     resetEndpoint,
     saveEndpoint,
@@ -153,13 +153,19 @@
     busy = 'sync';
     try {
       await triggerSync(endpoint.name);
-      flash = '已触发同步，3 秒后刷新状态';
-      setTimeout(() => {
-        busy = '';
-        onsync();
-      }, 3000);
+      // 轮询 syncing 标志等这轮真正跑完（见 api.ts waitSyncDone），不再盲等 3 秒；
+      // 拿回的最新状态顺带在这里给出一句话结论。
+      const list = await waitSyncDone(endpoint.name);
+      const st = list?.find((s) => s.name === endpoint.name);
+      if (st?.last_error) {
+        error = `同步失败：${st.last_error.split('\n')[0].slice(0, 120)}`;
+      } else {
+        flash = st ? '已同步' : '已触发同步（状态获取失败）';
+      }
+      onsync();
     } catch (e) {
       error = String(e);
+    } finally {
       busy = '';
     }
   }

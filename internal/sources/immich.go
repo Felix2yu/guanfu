@@ -167,6 +167,7 @@ func (s *ImmichSource) syncDay(ctx context.Context, day string) ([]immichAsset, 
 	dayEnd := dayStart.AddDate(0, 0, 1)
 
 	var all []immichAsset
+	capped := false
 	for page := 1; page <= immichMaxPages; page++ {
 		resp, err := s.searchPage(ctx, dayStart, dayEnd, page)
 		if err != nil {
@@ -176,6 +177,16 @@ func (s *ImmichSource) syncDay(ctx context.Context, day string) ([]immichAsset, 
 		if len(resp.Assets.Items) < immichPageSize || resp.Assets.NextPage == nil {
 			break
 		}
+		if page == immichMaxPages {
+			capped = true
+		}
+	}
+	if capped {
+		// 翻满防御上限仍未到末页：当天还有资产没拉到。报错让游标停在原地，
+		// 静默截断会让按天聚合的事件缺照片且永不补齐。
+		return nil, fmt.Errorf(
+			"immich 单日翻页达 %d 页防御上限（%s），可能有未拉取的照片；中止本轮且不推进游标",
+			immichMaxPages, day)
 	}
 	// 拍摄时刻升序（网格时间顺序）；解析失败的排最后。
 	sortAssetsByTime(all)

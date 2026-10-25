@@ -26,10 +26,13 @@ func StatGroupBys() []string {
 }
 
 // MoneyTotals 单一币种下的收支合计（单位：分）。
-// 判定口径与时间轴顶栏一致：detail_json 里 type=="income" 记收入，其余带金额事件记支出。
+// 判定口径与时间轴顶栏一致：detail_json 里 type=="income" 记收入；
+// type 为 transfer/reimburse（转账/报销）是内部资金划转，单独记 transfer、
+// 不计入收支；其余带金额事件记支出。
 type MoneyTotals struct {
-	IncomeCents  int64 `json:"income_cents"`
-	ExpenseCents int64 `json:"expense_cents"`
+	IncomeCents   int64 `json:"income_cents"`
+	ExpenseCents  int64 `json:"expense_cents"`
+	TransferCents int64 `json:"transfer_cents"`
 }
 
 // StatRow 一个聚合分组。Totals 按币种分桶，不同币种不混加。
@@ -99,10 +102,15 @@ type StatFilter struct {
 	Query     string // 标题/摘要字面量检索，与 ListEvents 同口径
 }
 
-// 收入判定表达式。detail_json 可能是空串或非法 JSON，先用 json_valid 洗成 {}
-// 再取 $.type——SQLite 不保证 CASE/AND 的短路求值，直接 json_extract 会整条查询报错。
-const incomeCond = `amount_cents > 0 AND
-	COALESCE(json_extract(CASE WHEN json_valid(detail_json) THEN detail_json ELSE '{}' END, '$.type'), '') = 'income'`
+// detailTypeExpr 取 detail_json 里的 $.type。detail_json 可能是空串或非法 JSON，
+// 先用 json_valid 洗成 {} 再取——SQLite 不保证 CASE/AND 的短路求值，
+// 直接 json_extract 会整条查询报错。
+const detailTypeExpr = `COALESCE(json_extract(CASE WHEN json_valid(detail_json) THEN detail_json ELSE '{}' END, '$.type'), '')`
+
+const incomeCond = `amount_cents > 0 AND ` + detailTypeExpr + ` = 'income'`
+
+// transferCond 转账/报销：内部资金划转，不是真实收支，单独分桶。
+const transferCond = `amount_cents > 0 AND ` + detailTypeExpr + ` IN ('transfer', 'reimburse')`
 
 // likeConds/likeArgs 关键词检索的 SQL 片段，ListEvents 与 Stats 共用：
 // 否则「明细命中 1 条、total_count 报 4 条」这种自相矛盾的返回会直接坑到调用方。
@@ -157,7 +165,8 @@ func (s *Store) Stats(f StatFilter) (*StatsResult, error) {
 
 	rows, err := s.DB.Query(`SELECT `+col+` AS k, currency, COUNT(*) AS n,
 			COALESCE(SUM(CASE WHEN `+incomeCond+` THEN amount_cents ELSE 0 END), 0) AS income,
-			COALESCE(SUM(CASE WHEN amount_cents > 0 AND NOT (`+incomeCond+`) THEN amount_cents ELSE 0 END), 0) AS expense
+			COALESCE(SUM(CASE WHEN amount_cents > 0 AND NOT (`+incomeCond+`) AND NOT (`+transferCond+`) THEN amount_cents ELSE 0 END), 0) AS expense,
+			COALESCE(SUM(CASE WHEN `+transferCond+` THEN amount_cents ELSE 0 END), 0) AS transfer
 		FROM events WHERE `+strings.Join(conds, " AND ")+`
 		GROUP BY k, currency `+order, args...)
 	if err != nil {
@@ -173,10 +182,10 @@ func (s *Store) Stats(f StatFilter) (*StatsResult, error) {
 	)
 	for rows.Next() {
 		var (
-			k, currency    string
-			n, income, exp int64
+			k, currency            string
+			n, income, exp, transf int64
 		)
-		if err := rows.Scan(&k, &currency, &n, &income, &exp); err != nil {
+		if err := rows.Scan(&k, &currency, &n, &income, &exp, &transf); err != nil {
 			return nil, err
 		}
 		if currency == "" {
@@ -193,11 +202,13 @@ func (s *Store) Stats(f StatFilter) (*StatsResult, error) {
 		t := row.Totals[currency]
 		t.IncomeCents += income
 		t.ExpenseCents += exp
+		t.TransferCents += transf
 		row.Totals[currency] = t
 
 		g := totals[currency]
 		g.IncomeCents += income
 		g.ExpenseCents += exp
+		g.TransferCents += transf
 		totals[currency] = g
 		grand += int(n)
 	}

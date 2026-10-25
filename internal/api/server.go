@@ -15,8 +15,10 @@
 //	POST /api/v1/settings/notify/{name}/test       通知渠道测试发送
 //	PUT  /api/v1/settings/policy                   应用级开关
 //	GET  /api/v1/export          全量/区间导出（JSON，流式；防锁定）
+//	POST /api/v1/import          导入 export JSON（按 source+external_id upsert）
+//	POST /api/v1/ingest/event    手动补录（Bearer GUANFU_INGEST_TOKEN；未配置=关闭）
 //	POST /api/v1/sync/{source}   手动同步（{source}=all 表示全部启用源；
-//	                              未知源名 400，未启用/没配端点 409，队列满 409）
+//	                              未知源名 400，未启用/没配端点/引擎未启动/队列满 409）
 //	GET  /api/v1/media/...       媒体代理（见 media.go）
 package api
 
@@ -45,11 +47,17 @@ type Server struct {
 	// 用函数而不是字段快照，页面保存后无需通知本层刷新。
 	settings *settings.Manager
 	sources  func() map[string]config.SourceConfig
+	// ingestToken 补录端点的 Bearer token；空 = 端点关闭。
+	ingestToken string
 }
 
-// NewServer 创建 API 服务并注册路由。mgr 提供生效配置与页面保存能力。
-func NewServer(st *store.Store, engine *sync.Engine, mgr *settings.Manager) *Server {
-	s := &Server{store: st, engine: engine, mux: http.NewServeMux(), settings: mgr}
+// NewServer 创建 API 服务并注册路由。mgr 提供生效配置与页面保存能力；
+// ingestToken 为补录端点凭据（空则该端点 404）。
+func NewServer(st *store.Store, engine *sync.Engine, mgr *settings.Manager, ingestToken string) *Server {
+	s := &Server{
+		store: st, engine: engine, mux: http.NewServeMux(), settings: mgr,
+		ingestToken: ingestToken,
+	}
 	s.sources = func() map[string]config.SourceConfig { return mgr.Sources() }
 	s.media = NewMediaProxy(s.sources)
 	s.routes()
@@ -72,6 +80,8 @@ func (s *Server) routes() {
 	s.mux.HandleFunc("POST /api/v1/settings/notify/{name}/test", s.handleTestNotify)
 	s.mux.HandleFunc("PUT /api/v1/settings/policy", s.handleSavePolicy)
 	s.mux.HandleFunc("GET /api/v1/export", s.handleExport)
+	s.mux.HandleFunc("POST /api/v1/import", s.handleImport)
+	s.mux.HandleFunc("POST /api/v1/ingest/event", s.handleIngestEvent)
 	s.mux.HandleFunc("POST /api/v1/sync/{source}", s.handleSync)
 	s.media.Routes(s.mux)
 }
@@ -103,6 +113,10 @@ func (s *Server) handleEvents(w http.ResponseWriter, r *http.Request) {
 		To:        q.Get("to"),
 		Source:    q.Get("source"),
 		EventType: q.Get("type"),
+		// q：标题/摘要子串检索（与 MCP guanfu_events 同口径，按字面量匹配）。
+		Query: q.Get("q"),
+		// order=desc：搜索场景按时刻倒序（最近在前）；默认正序。
+		Order: q.Get("order"),
 	}
 	if n := q.Get("limit"); n != "" {
 		if v, err := strconv.Atoi(n); err == nil {
@@ -204,6 +218,8 @@ type sourceView struct {
 	CredentialSet bool   `json:"credential_set"`
 	// Configured = 端点已填且凭据满足要求，即"这一源能跑起来了"。
 	Configured bool `json:"configured"`
+	// Syncing = 此刻有一轮同步在跑（引擎 syncing 标记），前端据此轮询同步完成。
+	Syncing bool `json:"syncing"`
 }
 
 func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
@@ -237,6 +253,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 	sort.Strings(names)
 
 	out := make([]sourceView, 0, len(names))
+	syncing := s.engine.Syncing()
 	for _, name := range names {
 		cfg, hasCfg := srcs[name]
 		st := byName[name]
@@ -265,6 +282,7 @@ func (s *Server) handleSources(w http.ResponseWriter, r *http.Request) {
 			}
 		}
 		v.Configured = cfg.BaseURL != "" && (auth == config.AuthNone || v.CredentialSet || hasOptionalCred(name))
+		v.Syncing = syncing[name]
 		out = append(out, v)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"code": 0, "data": out})
@@ -304,5 +322,7 @@ func (s *Server) handleSync(w http.ResponseWriter, r *http.Request) {
 		writeErr(w, http.StatusConflict, "该源未启用或没配端点，无法同步: "+name)
 	case sync.TriggerBusy:
 		writeErr(w, http.StatusConflict, "同步触发排队已满，请稍后再试")
+	case sync.TriggerNotStarted:
+		writeErr(w, http.StatusConflict, "同步引擎未启动（GUANFU_SYNC_ENABLED=0），手动同步不可用")
 	}
 }

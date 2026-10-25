@@ -235,7 +235,11 @@ func (q *QingyeSource) fetchDiaries(ctx context.Context, cutoffUnix int64) ([]qi
 			return out, nil
 		}
 		if page == qingyeMaxPages {
-			log.Printf("[qingye] 日记单轮触顶 %d 条（%d 页），剩余部分下轮继续", qingyeMaxPages*qingyePageSize, qingyeMaxPages)
+			// 上游没有日期过滤参数，倒序翻页触顶后无法"下轮继续"——水位会推到
+			// 最新，未拉到的旧条目从此不会被重查。必须报错让水位停在原地。
+			return out, fmt.Errorf(
+				"qingye 日记翻页达 %d 页防御上限，水位之上有未拉取的日记（上游无日期过滤，无法续传）；中止本轮且不推进游标",
+				qingyeMaxPages)
 		}
 	}
 	return out, nil

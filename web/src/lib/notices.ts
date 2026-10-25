@@ -40,7 +40,7 @@ export function deriveNotices(sources: SourceState[]): Notice[] {
       out.push({
         id: `${s.name}:${s.last_sync_at}:ok`,
         tone: 'ok',
-        text: `${sourceLabel(s.name)}同步完成${s.last_count ? ` · 新增 ${s.last_count} 条` : ''}`,
+        text: `${sourceLabel(s.name)}同步完成${s.last_count ? ` · ${s.last_count} 条变更` : ''}`,
         at: s.last_sync_at
       });
     }

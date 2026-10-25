@@ -5,7 +5,6 @@ import (
 	"encoding/json"
 	"fmt"
 	"io"
-	"log"
 	"net/http"
 	"net/url"
 	"strconv"
@@ -157,7 +156,7 @@ func (s *ShenshiSource) Sync(ctx context.Context, cursor string, upsert func(*mo
 	var total int
 
 	// 1) 任务完成
-	tasks, err := s.fetchDoneTasks(ctx)
+	tasks, err := s.fetchDoneTasks(ctx, from)
 	if err != nil {
 		return "", total, err
 	}
@@ -238,7 +237,9 @@ func (s *ShenshiSource) get(ctx context.Context, reqURL string, dst any) error {
 }
 
 // fetchDoneTasks 拉取最近完成的 N 条任务（按完成时间倒序）。
-func (s *ShenshiSource) fetchDoneTasks(ctx context.Context) ([]shenshiTask, error) {
+// from 是本轮窗口起点：若拉满上限且最旧一条仍晚于 from，说明窗口内有
+// 未拉到的完成记录，报错让游标停在原地（静默跳过会永久丢失）。
+func (s *ShenshiSource) fetchDoneTasks(ctx context.Context, from string) ([]shenshiTask, error) {
 	v := url.Values{}
 	v.Set("status", "done")
 	v.Set("sortBy", "completed")
@@ -251,9 +252,21 @@ func (s *ShenshiSource) fetchDoneTasks(ctx context.Context) ([]shenshiTask, erro
 		return nil, err
 	}
 	if len(resp.Tasks) >= shenshiTaskFetchLimit {
-		// 触顶：更早的完成记录本轮拿不到。提高 limit 或缩短首次回溯窗口可缓解。
-		log.Printf("[shenshi] 已完成任务达拉取上限 %d（返回 %d），更早的完成记录可能未同步",
-			shenshiTaskFetchLimit, len(resp.Tasks))
+		// 倒序返回的末尾是最旧一条；它已早于窗口起点的话，这 500 条
+		// 足以覆盖整个窗口，不算截断。
+		covered := false
+		if t := resp.Tasks[len(resp.Tasks)-1]; t.CompletedAt != nil && *t.CompletedAt != "" {
+			if at, err := time.Parse(time.RFC3339, *t.CompletedAt); err == nil {
+				if at.In(s.loc).Format("2006-01-02") <= from {
+					covered = true
+				}
+			}
+		}
+		if !covered {
+			return nil, fmt.Errorf(
+				"shenshi 已完成任务拉取达上限 %d 条且未覆盖到窗口起点 %s，窗口内可能有未拉取的完成记录；中止本轮且不推进游标",
+				shenshiTaskFetchLimit, from)
+		}
 	}
 	return resp.Tasks, nil
 }

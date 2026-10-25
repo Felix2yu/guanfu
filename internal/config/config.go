@@ -25,6 +25,9 @@ type Config struct {
 	MCPEnabled bool
 	// MCPToken 非空时 /mcp 要求 Authorization: Bearer <token>；stdio 不需要。
 	MCPToken string
+	// IngestToken 手动补录端点（POST /api/v1/ingest/event）的 Bearer token。
+	// 空时补录端点整体关闭（404）；配置后开放。
+	IngestToken string
 
 	// 各数据源配置。缺省时对应源标记为未配置（enabled=false 且无凭据），
 	// 同步会记录 last_error 而不是崩溃。
@@ -109,6 +112,7 @@ func Load() *Config {
 		SyncEnabled: getenv("GUANFU_SYNC_ENABLED", "1") != "0",
 		MCPEnabled:  getenv("GUANFU_MCP_ENABLED", "1") != "0",
 		MCPToken:    os.Getenv("GUANFU_MCP_TOKEN"),
+		IngestToken: os.Getenv("GUANFU_INGEST_TOKEN"),
 		Sources:     map[string]SourceConfig{},
 	}
 	// 各源默认回溯天数（首次无 cursor 时的回溯窗口）。

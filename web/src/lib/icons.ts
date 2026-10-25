@@ -15,4 +15,6 @@ export type IconName =
   | 'up'
   | 'down'
   | 'flat'
-  | 'clock';
+  | 'clock'
+  | 'external'
+  | 'plus';

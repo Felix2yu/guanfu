@@ -17,6 +17,10 @@ import (
 	"github.com/Felix2yu/guanfu/internal/model"
 )
 
+// huozhiOverlapDays 每次增量同步回退的天数（账单可能被补录、编辑或改期；
+// upsert 幂等，重查无副作用）。
+const huozhiOverlapDays = 3
+
 // HuozhiSource 货殖（huozhi）记账数据适配器。
 //
 // 上游接口（2026-10-15 读源码确认）：
@@ -91,9 +95,10 @@ func (h *HuozhiSource) Sync(ctx context.Context, cursor string, upsert func(*mod
 	now := time.Now().In(loc)
 	start := now.AddDate(0, 0, -h.cfg.LookbackDays)
 	if cursor != "" {
-		// cursor 是上次成功同步的 end_date（含），次日开始即可。
+		// cursor 是上次成功同步的 end_date（含），回退 3 天重查（幂等），
+		// 覆盖窗口外的补录/编辑——只从次日开始的话，迟到修订永久漏掉。
 		if t, err := time.ParseInLocation("2006-01-02", cursor, loc); err == nil {
-			start = t.AddDate(0, 0, 1)
+			start = t.AddDate(0, 0, 1-huozhiOverlapDays)
 		}
 	}
 	end := now
@@ -125,8 +130,12 @@ func (h *HuozhiSource) Sync(ctx context.Context, cursor string, upsert func(*mod
 		if len(bills) < pageSize || int64(page*pageSize) >= pageTotal {
 			break
 		}
-		if page > 200 { // 防御性上限：200 页 ×100 = 2 万条/轮
-			break
+		if page > 200 {
+			// 防御性上限（200 页 ×100 = 2 万条/轮）。触顶说明窗口内还有未拉取的
+			// 数据，必须报错让游标停在原地，否则被跳过的页会永久丢失。
+			return "", total, fmt.Errorf(
+				"huozhi 翻页达 200 页防御上限（%s~%s），窗口内可能有未拉取的账单；中止本轮且不推进游标",
+				start.Format("2006-01-02"), end.Format("2006-01-02"))
 		}
 	}
 	return end.Format("2006-01-02"), total, nil

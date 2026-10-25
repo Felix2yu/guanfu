@@ -141,7 +141,7 @@ func main() {
 		mgr.NotifySyncFailure(ctx, name, cause)
 	})
 
-	apiServer := api.NewServer(st, engine, mgr)
+	apiServer := api.NewServer(st, engine, mgr, cfg.IngestToken)
 
 	// 前端托管：磁盘目录优先（不重编译可换前端），否则内嵌产物。
 	var appHandler http.Handler = apiServer.Handler()

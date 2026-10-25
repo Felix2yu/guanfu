@@ -141,8 +141,8 @@ func TestHuozhiSyncCursorIncrement(t *testing.T) {
 	if _, _, err := src.Sync(context.Background(), "2026-10-10", func(*model.Event) error { return nil }); err != nil {
 		t.Fatalf("Sync 失败: %v", err)
 	}
-	// cursor 次日开始：start_date=2026-10-11。
-	if !strings.Contains(seen[0], "start_date=2026-10-11") {
+	// cursor 回退 3 天重查（幂等）：start_date=2026-10-08。
+	if !strings.Contains(seen[0], "start_date=2026-10-08") {
 		t.Fatalf("增量起点异常: %v", seen)
 	}
 }

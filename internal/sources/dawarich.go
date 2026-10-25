@@ -16,7 +16,8 @@ import (
 )
 
 // dawarichOverlapDays 每次增量同步回退的天数（suggested→confirmed 状态变化迟到）。
-const dawarichOverlapDays = 2
+// 与其余日期游标源统一为 3 天。
+const dawarichOverlapDays = 3
 
 // DawarichSource Dawarich（到访地点）适配器。
 //
@@ -136,8 +137,12 @@ func (d *DawarichSource) syncDay(ctx context.Context, day time.Time, upsert func
 		if len(visits) < perPage {
 			break
 		}
-		if page > 20 { // 防御：单日 1 万条 visits 上限
-			break
+		if page > 20 {
+			// 防御上限（单日 1 万条 visits）。触顶说明当天还有未拉取的数据，
+			// 报错让游标停在原地——静默跳过会永久丢失。
+			return n, fmt.Errorf(
+				"dawarich 单日翻页达 20 页防御上限（%s），可能有未拉取的 visits；中止本轮且不推进游标",
+				day.Format("2006-01-02"))
 		}
 	}
 	return n, nil

@@ -401,7 +401,7 @@ func newScopeHarness(t *testing.T, enabled func(string) bool) *scopeHarness {
 	t.Cleanup(cancel)
 	engine.Start(ctx)
 
-	return &scopeHarness{srv: NewServer(st, engine, mgr), calls: calls}
+	return &scopeHarness{srv: NewServer(st, engine, mgr, ""), calls: calls}
 }
 
 // startSweep 等启动首轮把两个源都同步一遍，然后清零，

@@ -11,7 +11,9 @@ import (
 
 // UpsertEvent 幂等写入一条事件。
 // 冲突键 (source, external_id) 已存在时更新业务字段（源侧可能被修订），
-// 但保留 created_at。返回是否有实际变化（用于统计「本次同步新增/更新数」）。
+// 但保留 created_at。仅当内容真的变化时才执行 UPDATE（见 WHERE 子句），
+// 因此 RowsAffected>0 = 新增或修订，重复拉取同一批数据时恒为 false
+// （引擎据此统计「本轮真实变更数」，前端「新增 N 条」不虚报）。
 func (s *Store) UpsertEvent(e *model.Event) (changed bool, err error) {
 	now := time.Now().Unix()
 	media := ""
@@ -28,7 +30,6 @@ func (s *Store) UpsertEvent(e *model.Event) (changed bool, err error) {
 	}
 	e.CreatedAt, e.UpdatedAt = now, now
 
-	// upsert + 变化检测：用 changes() 判断是否真正写入了不同内容。
 	res, err := s.DB.Exec(`INSERT INTO events
 		(source, external_id, event_type, time_precision, occurred_at, local_date,
 		 title, summary, amount_cents, currency, latitude, longitude, location_name,
@@ -49,7 +50,21 @@ func (s *Store) UpsertEvent(e *model.Event) (changed bool, err error) {
 		 media_json=excluded.media_json,
 		 detail_json=excluded.detail_json,
 		 source_url=excluded.source_url,
-		 updated_at=excluded.updated_at`,
+		 updated_at=excluded.updated_at
+		WHERE event_type IS NOT excluded.event_type
+		   OR time_precision IS NOT excluded.time_precision
+		   OR occurred_at IS NOT excluded.occurred_at
+		   OR local_date IS NOT excluded.local_date
+		   OR title IS NOT excluded.title
+		   OR summary IS NOT excluded.summary
+		   OR amount_cents IS NOT excluded.amount_cents
+		   OR currency IS NOT excluded.currency
+		   OR latitude IS NOT excluded.latitude
+		   OR longitude IS NOT excluded.longitude
+		   OR location_name IS NOT excluded.location_name
+		   OR media_json IS NOT excluded.media_json
+		   OR detail_json IS NOT excluded.detail_json
+		   OR source_url IS NOT excluded.source_url`,
 		e.Source, e.ExternalID, e.EventType, e.TimePrecision, e.OccurredAt, e.LocalDate,
 		e.Title, e.Summary, e.AmountCents, e.Currency, e.Latitude, e.Longitude, e.LocationName,
 		media, detail, e.SourceURL, e.CreatedAt, e.UpdatedAt)
@@ -68,7 +83,9 @@ type EventQuery struct {
 	Source    string
 	EventType string
 	// Query 标题/摘要子串检索（MCP 用）。按字面量匹配，% 与 _ 不作为通配符。
-	Query  string
+	Query string
+	// Order "desc" 时按时刻倒序（搜索场景：最近在前）；默认正序。
+	Order  string
 	Limit  int
 	Offset int
 }
@@ -114,10 +131,14 @@ func (s *Store) ListEvents(q EventQuery) ([]*model.Event, error) {
 	if limit <= 0 || limit > 1000 {
 		limit = 500
 	}
+	order := "occurred_at ASC, id ASC"
+	if q.Order == "desc" {
+		order = "occurred_at DESC, id DESC"
+	}
 	rows, err := s.DB.Query(`SELECT id, source, external_id, event_type, time_precision,
 			occurred_at, local_date, title, summary, amount_cents, currency, latitude, longitude,
 			location_name, media_json, detail_json, source_url, created_at, updated_at
-		FROM events `+where+` ORDER BY occurred_at ASC, id ASC LIMIT ? OFFSET ?`,
+		FROM events `+where+` ORDER BY `+order+` LIMIT ? OFFSET ?`,
 		append(args, limit, q.Offset)...)
 	if err != nil {
 		return nil, err

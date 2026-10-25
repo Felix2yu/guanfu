@@ -25,7 +25,8 @@ func TestStatsGroupsAndTotals(t *testing.T) {
 	st := openTemp(t)
 	seedStat(t, st, "h1", "huozhi", "transaction", "2026-10-05", 1200, "expense")
 	seedStat(t, st, "h2", "huozhi", "transaction", "2026-10-05", 500000, "income")
-	seedStat(t, st, "h3", "huozhi", "transaction", "2026-10-06", 800, "transfer") // 非 income → 支出
+	seedStat(t, st, "h3", "huozhi", "transaction", "2026-10-06", 800, "transfer") // 转账 → 单独桶，不计收支
+	seedStat(t, st, "h4", "huozhi", "transaction", "2026-10-06", 300, "reimburse")
 	seedStat(t, st, "q1", "qiansi", "gift_money", "2026-10-06", 20000, "income")
 	seedStat(t, st, "m1", "mujian", "performance", "2026-10-07", 0, "") // 无金额事件
 	seedStat(t, st, "d1", "diarum", "diary", "2026-11-01", 0, "")       // 区间外
@@ -34,19 +35,19 @@ func TestStatsGroupsAndTotals(t *testing.T) {
 	if err != nil {
 		t.Fatalf("Stats 失败: %v", err)
 	}
-	if got.TotalCount != 5 {
-		t.Fatalf("total_count 期望 5，实际 %d", got.TotalCount)
+	if got.TotalCount != 6 {
+		t.Fatalf("total_count 期望 6，实际 %d", got.TotalCount)
 	}
 	bySource := map[string]StatRow{}
 	for _, r := range got.Rows {
 		bySource[r.Key] = r
 	}
 	h := bySource["huozhi"]
-	if h.Count != 3 {
-		t.Fatalf("huozhi 条数期望 3，实际 %d", h.Count)
+	if h.Count != 4 {
+		t.Fatalf("huozhi 条数期望 4，实际 %d", h.Count)
 	}
-	if cny := h.Totals["CNY"]; cny.IncomeCents != 500000 || cny.ExpenseCents != 2000 {
-		t.Fatalf("huozhi 收支持有误: %+v（期望 收 500000 / 支 2000）", cny)
+	if cny := h.Totals["CNY"]; cny.IncomeCents != 500000 || cny.ExpenseCents != 1200 || cny.TransferCents != 1100 {
+		t.Fatalf("huozhi 收支持有误: %+v（期望 收 500000 / 支 1200 / 转账 1100）", cny)
 	}
 	if _, ok := bySource["diarum"]; ok {
 		t.Fatal("11 月的事件不应出现在 10 月区间")
@@ -64,7 +65,7 @@ func TestStatsGroupsAndTotals(t *testing.T) {
 		t.Fatalf("无金额事件不应产生收支: %+v", mj.Totals)
 	}
 	// 全局合计 = 各组之和。
-	if tot := got.Totals["CNY"]; tot.IncomeCents != 520000 || tot.ExpenseCents != 2000 {
+	if tot := got.Totals["CNY"]; tot.IncomeCents != 520000 || tot.ExpenseCents != 1200 || tot.TransferCents != 1100 {
 		t.Fatalf("全局合计有误: %+v", tot)
 	}
 }
