@@ -1,12 +1,21 @@
 package web
 
 import (
+	"mime"
 	"net/http"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
 )
+
+// Go 内置扩展名表不认 .webmanifest，不注册就会被嗅探成 text/plain，
+// 而浏览器对 manifest 的 MIME 是严格校验的：装不上，且只在 DevTools 留一行警告。
+func TestWebmanifestMIME(t *testing.T) {
+	if got := mime.TypeByExtension(".webmanifest"); got != "application/manifest+json" {
+		t.Fatalf(".webmanifest 的 Content-Type = %q，期望 application/manifest+json", got)
+	}
+}
 
 func TestHasBuild(t *testing.T) {
 	if !HasBuild() {

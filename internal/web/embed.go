@@ -5,10 +5,18 @@ package web
 import (
 	"embed"
 	"io/fs"
+	"mime"
 	"net/http"
 	"os"
 	"strings"
 )
+
+// Go 内置的扩展名表里没有 .webmanifest，TypeByExtension 返回空串后
+// ServeContent 会按内容嗅探成 text/plain，而浏览器对 manifest 的 MIME 是严格校验的
+// —— 装不上且只在 DevTools 留一行警告。与 siwu 同因，显式注册。
+func init() {
+	_ = mime.AddExtensionType(".webmanifest", "application/manifest+json")
+}
 
 // 构建脚本会把 SvelteKit 静态产物复制到 internal/web/dist 后再编译，
 // 从而单二进制自带前端。未构建时该目录只有占位文件，HasBuild 返回 false。
