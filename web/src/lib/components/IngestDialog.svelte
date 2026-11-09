@@ -94,11 +94,11 @@
     <div class="grid grid-cols-2 gap-2.5">
       <label class="block">
         <span class="mb-1 block fs-11 text-ink-3">日期</span>
-        <input class="field tnum" type="date" bind:value={fdate} required />
+        <input class="tnum field" type="date" bind:value={fdate} required />
       </label>
       <label class="block">
         <span class="mb-1 block fs-11 text-ink-3">时刻（留空 = 全天）</span>
-        <input class="field tnum" type="time" bind:value={ftime} />
+        <input class="tnum field" type="time" bind:value={ftime} />
       </label>
       <label class="col-span-2 block">
         <span class="mb-1 block fs-11 text-ink-3">标题</span>
@@ -115,7 +115,7 @@
       <label class="block">
         <span class="mb-1 block fs-11 text-ink-3">金额（元，可空）</span>
         <input
-          class="field tnum"
+          class="tnum field"
           type="number"
           inputmode="decimal"
           min="0"
@@ -126,7 +126,7 @@
       </label>
       <label class="col-span-2 block">
         <span class="mb-1 block fs-11 text-ink-3">备注（可空）</span>
-        <textarea class="field min-h-16 resize-y" bind:value={summary} rows="2"></textarea>
+        <textarea class="min-h-16 field resize-y" bind:value={summary} rows="2"></textarea>
       </label>
     </div>
 

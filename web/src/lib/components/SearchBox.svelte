@@ -83,7 +83,7 @@
                 onmousedown={(e) => e.preventDefault()}
                 onclick={() => pick(ev)}
               >
-                <span class="tnum shrink-0 whitespace-nowrap fs-11 text-ink-3">
+                <span class="tnum shrink-0 fs-11 whitespace-nowrap text-ink-3">
                   {ev.local_date.slice(5)}{ev.local_time ? ` ${ev.local_time}` : ''}
                 </span>
                 <span class="min-w-0 flex-1 truncate fs-125 text-ink"

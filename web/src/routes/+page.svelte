@@ -275,38 +275,38 @@
           }}
         />
         <div class="flex items-center gap-1">
-        <button
-          type="button"
-          class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
-          onclick={() => dayOffset(-1)}
-          aria-label="前一天"
-        >
-          <Icon name="chevron-left" size={16} />
-        </button>
-        <input
-          type="date"
-          class="tnum h-9 rounded-[9px] border border-line bg-surface px-2 fs-125 text-ink"
-          value={date}
-          onchange={onDateInput}
-          min={range.min || undefined}
-          max={range.max || undefined}
-          aria-label="选择日期"
-        />
-        <button
-          type="button"
-          class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
-          onclick={() => dayOffset(1)}
-          aria-label="后一天"
-        >
-          <Icon name="chevron-right" size={16} />
-        </button>
-        {#if date !== todayStr()}
           <button
             type="button"
-            class="h-9 rounded-[9px] border border-line bg-surface px-2.5 fs-125 text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
-            onclick={() => goto(todayStr())}>今天</button
+            class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+            onclick={() => dayOffset(-1)}
+            aria-label="前一天"
           >
-        {/if}
+            <Icon name="chevron-left" size={16} />
+          </button>
+          <input
+            type="date"
+            class="tnum h-9 rounded-[9px] border border-line bg-surface px-2 fs-125 text-ink"
+            value={date}
+            onchange={onDateInput}
+            min={range.min || undefined}
+            max={range.max || undefined}
+            aria-label="选择日期"
+          />
+          <button
+            type="button"
+            class="flex h-9 w-9 items-center justify-center rounded-[9px] border border-line bg-surface text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+            onclick={() => dayOffset(1)}
+            aria-label="后一天"
+          >
+            <Icon name="chevron-right" size={16} />
+          </button>
+          {#if date !== todayStr()}
+            <button
+              type="button"
+              class="h-9 rounded-[9px] border border-line bg-surface px-2.5 fs-125 text-ink-2 transition-colors hover:border-line-strong hover:text-ink"
+              onclick={() => goto(todayStr())}>今天</button
+            >
+          {/if}
         </div>
       </div>
     {/if}

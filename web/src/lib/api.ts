@@ -302,7 +302,12 @@ export function ingestEvent(input: IngestInput): Promise<{ changed: boolean }> {
  */
 export async function waitSyncDone(
   target: string,
-  opts: { maxMs?: number; graceMs?: number; intervalMs?: number; onUpdate?: (list: SourceState[]) => void } = {}
+  opts: {
+    maxMs?: number;
+    graceMs?: number;
+    intervalMs?: number;
+    onUpdate?: (list: SourceState[]) => void;
+  } = {}
 ): Promise<SourceState[] | null> {
   const { maxMs = 120_000, graceMs = 8_000, intervalMs = 1_200, onUpdate } = opts;
   const started = Date.now();

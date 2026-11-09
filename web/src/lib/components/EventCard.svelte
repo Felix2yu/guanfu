@@ -254,6 +254,8 @@
 
   {#if event.source_url}
     <!-- 深链出口：跳回源应用的原件（账单详情/演出记录/日记正文……）。 -->
+    <!-- 外部/自定义 scheme 地址不在 Kit 路由里，resolve() 在这里没有意义 -->
+    <!-- eslint-disable svelte/no-navigation-without-resolve -->
     <a
       href={event.source_url}
       target="_blank"
