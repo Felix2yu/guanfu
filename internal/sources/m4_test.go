@@ -170,7 +170,7 @@ func TestQiansiSyncMappingAndPaging(t *testing.T) {
 
 // ---------- shenshi ----------
 
-func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
+func shenshiFixture(t *testing.T, seen *[]string, taskDate string) *httptest.Server {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		if seen != nil {
@@ -186,7 +186,7 @@ func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
 				"count": 2,
 				"tasks": []map[string]any{
 					{"id": "11", "title": "写观复 M4", "status": "done", "priority": 2,
-						"completedAt": "2026-10-15T22:41:33+08:00", "dueDate": "2026-10-15",
+						"completedAt": taskDate + "T22:41:33+08:00", "dueDate": taskDate,
 						"important": true, "urgent": true,
 						"tags":     []map[string]any{{"id": "1", "name": "观复"}},
 						"subtasks": []map[string]any{{"id": "1", "status": "done"}, {"id": "2", "status": "todo"}}},
@@ -224,8 +224,10 @@ func shenshiFixture(t *testing.T, seen *[]string) *httptest.Server {
 }
 
 func TestShenshiSyncTaskReviewHabit(t *testing.T) {
+	// 任务日期用相对日期而非写死日期，避免 30 天回溯窗口过期后测试失效。
+	taskDate := time.Now().In(model.LocalLocation()).AddDate(0, 0, -1).Format("2006-01-02")
 	var seen []string
-	srv := shenshiFixture(t, &seen)
+	srv := shenshiFixture(t, &seen, taskDate)
 	src := NewShenshiSource(config.SourceConfig{
 		BaseURL: srv.URL, APIKey: "tok", LookbackDays: 30, Interval: time.Hour,
 	})
@@ -246,10 +248,14 @@ func TestShenshiSyncTaskReviewHabit(t *testing.T) {
 	if tk.EventType != model.EventTaskDone || tk.TimePrecision != model.PrecisionSecond {
 		t.Fatalf("任务事件类型/精度异常: %+v", tk)
 	}
-	if tk.LocalDate != "2026-10-15" {
-		t.Fatalf("完成日应为 2026-10-15（+08:00），实际 %s", tk.LocalDate)
+	if tk.LocalDate != taskDate {
+		t.Fatalf("完成日应为 %s（+08:00），实际 %s", taskDate, tk.LocalDate)
 	}
-	wantAt := time.Date(2026, 10, 15, 22, 41, 33, 0, time.FixedZone("CST", 8*3600)).Unix()
+	taskDay, err := time.ParseInLocation("2006-01-02", taskDate, model.LocalLocation())
+	if err != nil {
+		t.Fatalf("解析任务日期失败: %v", err)
+	}
+	wantAt := time.Date(taskDay.Year(), taskDay.Month(), taskDay.Day(), 22, 41, 33, 0, taskDay.Location()).Unix()
 	if tk.OccurredAt != wantAt {
 		t.Fatalf("完成时刻应为 %d，实际 %d", wantAt, tk.OccurredAt)
 	}

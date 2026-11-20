@@ -341,29 +341,32 @@ func mkAsset(id, typ string, createdAt string, fav bool, exif map[string]any) ma
 }
 
 func TestImmichSyncDayAggregation(t *testing.T) {
-	// 2026-10-15 有 3 项（2 图 1 视频，其中 1 张带 GPS+相机）；
-	// 10-14 有 1 张但首页即不满页；其余日期无数据。
+	// 用相对日期而非写死日期：LookbackDays=30 的回溯窗口会随时间推移过期。
+	now := time.Now().In(model.LocalLocation())
+	day1 := now.AddDate(0, 0, -1).Format("2006-01-02") // 3 项（2 图 1 视频，其中 1 张带 GPS+相机）
+	day0 := now.AddDate(0, 0, -2).Format("2006-01-02") // 1 张但首页即不满页
+	day2 := now.Format("2006-01-02")                   // day1 的次日
 	uuid := func(i int) string { return fmt.Sprintf("aaaaaaaa-0000-4000-8000-%012d", i) }
 	srv, bodies := immichFixture(t, "im-key", func(dayStart, dayEnd string, page int) ([]map[string]any, *string) {
 		switch {
-		case strings.HasPrefix(dayStart, "2026-10-15"):
+		case strings.HasPrefix(dayStart, day1):
 			if page == 1 {
 				items := []map[string]any{
-					mkAsset(uuid(1), "IMAGE", "2026-10-15T04:02:00.000Z", false, map[string]any{
+					mkAsset(uuid(1), "IMAGE", day1+"T04:02:00.000Z", false, map[string]any{
 						"make": "Apple", "model": "iPhone 15 Pro",
 						"latitude": 31.2323, "longitude": 121.4692, "city": "上海市",
 					}),
-					mkAsset(uuid(2), "VIDEO", "2026-10-15T06:30:00.000Z", true, nil),
-					mkAsset(uuid(3), "IMAGE", "2026-10-15T10:33:00.000Z", true, map[string]any{
+					mkAsset(uuid(2), "VIDEO", day1+"T06:30:00.000Z", true, nil),
+					mkAsset(uuid(3), "IMAGE", day1+"T10:33:00.000Z", true, map[string]any{
 						"city": "苏州市",
 					}),
 				}
 				return items, nil // count<size → 不再翻页
 			}
 			return nil, nil
-		case strings.HasPrefix(dayStart, "2026-10-14"):
+		case strings.HasPrefix(dayStart, day0):
 			if page == 1 {
-				return []map[string]any{mkAsset(uuid(4), "IMAGE", "2026-10-14T12:00:00.000Z", false, nil)}, nil
+				return []map[string]any{mkAsset(uuid(4), "IMAGE", day0+"T12:00:00.000Z", false, nil)}, nil
 			}
 			return nil, nil
 		default:
@@ -399,9 +402,9 @@ func TestImmichSyncDayAggregation(t *testing.T) {
 		byDate[e.LocalDate] = e
 	}
 
-	e := byDate["2026-10-15"]
+	e := byDate[day1]
 	if e == nil {
-		t.Fatal("缺少 2026-10-15 聚合事件")
+		t.Fatalf("缺少 %s 聚合事件", day1)
 	}
 	if e.Title != "照片 2 张 · 视频 1 个" {
 		t.Fatalf("标题异常: %q", e.Title)
@@ -442,9 +445,9 @@ func TestImmichSyncDayAggregation(t *testing.T) {
 	for _, b := range *bodies {
 		ta, _ := b["takenAfter"].(string)
 		tb, _ := b["takenBefore"].(string)
-		if strings.HasPrefix(ta, "2026-10-15T00:00:00") {
+		if strings.HasPrefix(ta, day1+"T00:00:00") {
 			checked = true
-			if !strings.HasPrefix(tb, "2026-10-16T00:00:00") {
+			if !strings.HasPrefix(tb, day2+"T00:00:00") {
 				t.Fatalf("takenBefore 非次日零点: %q", tb)
 			}
 			if b["withExif"] != true {
@@ -456,28 +459,30 @@ func TestImmichSyncDayAggregation(t *testing.T) {
 		}
 	}
 	if !checked {
-		t.Fatalf("未见 10-15 的查询: %v", *bodies)
+		t.Fatalf("未见 %s 的查询: %v", day1, *bodies)
 	}
 }
 
 func TestImmichSyncPagination(t *testing.T) {
+	// 用相对日期而非写死日期，避免 30 天回溯窗口过期后测试失效。
+	day1 := time.Now().In(model.LocalLocation()).AddDate(0, 0, -1).Format("2006-01-02")
 	uuid := func(i int) string { return fmt.Sprintf("bbbbbbbb-0000-4000-8000-%012d", i) }
 	page2Calls := 0
 	srv, _ := immichFixture(t, "im-key", func(dayStart, dayEnd string, page int) ([]map[string]any, *string) {
-		if !strings.HasPrefix(dayStart, "2026-10-15") {
+		if !strings.HasPrefix(dayStart, day1) {
 			return nil, nil
 		}
 		if page == 1 {
 			// 满页（500 条）+ nextPage → 必须继续翻页。
 			items := make([]map[string]any, 0, immichPageSize)
 			for i := 0; i < immichPageSize; i++ {
-				items = append(items, mkAsset(uuid(i), "IMAGE", "2026-10-15T04:00:00.000Z", false, nil))
+				items = append(items, mkAsset(uuid(i), "IMAGE", day1+"T04:00:00.000Z", false, nil))
 			}
 			np := "2"
 			return items, &np
 		}
 		page2Calls++
-		return []map[string]any{mkAsset(uuid(999), "IMAGE", "2026-10-15T05:00:00.000Z", false, nil)}, nil
+		return []map[string]any{mkAsset(uuid(999), "IMAGE", day1+"T05:00:00.000Z", false, nil)}, nil
 	})
 
 	src := NewImmichSource(config.SourceConfig{BaseURL: srv.URL, APIKey: "im-key", LookbackDays: 30})
