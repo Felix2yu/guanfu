@@ -239,6 +239,9 @@ func TestZhichangUnitsFailureStillSyncs(t *testing.T) {
 // ---------- dawarich ----------
 
 func TestDawarichSyncConfirmedOnlyAndDurationMinutes(t *testing.T) {
+	// 用相对日期而非写死日期：LookbackDays=30 的回溯窗口会随时间推移过期，
+	// 写死日期会让测试在某个日期之后必然失败（时间炸弹）。
+	day := time.Now().In(model.LocalLocation()).AddDate(0, 0, -1).Format("2006-01-02")
 	var seen []string
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		seen = append(seen, r.URL.RawQuery)
@@ -250,28 +253,28 @@ func TestDawarichSyncConfirmedOnlyAndDurationMinutes(t *testing.T) {
 		visits := []map[string]any{
 			{
 				"id": "1", "name": "公司", "status": "confirmed", "confidence": 0.9,
-				"started_at": "2026-10-14T09:00:18+08:00", "ended_at": "2026-10-14T10:41:01+08:00",
+				"started_at": day + "T09:00:18+08:00", "ended_at": day + "T10:41:01+08:00",
 				"duration": 101, // 分钟（timeline 的 journey 才是秒，别混）
 				"place":    map[string]any{"latitude": 31.2304, "longitude": 121.4737, "id": "5"},
 			},
 			{
 				"id": "2", "name": "Suggested place", "status": "suggested", "confidence": 0.5,
-				"started_at": "2026-10-14T13:00:00+08:00", "ended_at": "2026-10-14T13:30:00+08:00",
+				"started_at": day + "T13:00:00+08:00", "ended_at": day + "T13:30:00+08:00",
 				"duration": 30,
 				"place":    map[string]any{"latitude": 31.24, "longitude": 121.48, "id": "6"},
 			},
 			{
 				"id": "3", "name": "", "status": "confirmed", "confidence": 0.8,
-				"started_at": "2026-10-14T19:00:00+08:00", "ended_at": "2026-10-14T20:10:00+08:00",
+				"started_at": day + "T19:00:00+08:00", "ended_at": day + "T20:10:00+08:00",
 				"duration": 70,
 				"place":    map[string]any{"latitude": 31.2000, "longitude": 121.5000, "id": "7"},
 			},
 		}
 		page := r.URL.Query().Get("page")
 		if page == "1" {
-			// 仅当查询窗口覆盖 2026-10-14 才返回（按天查询，与真实行为一致）。
+			// 仅当查询窗口覆盖目标日才返回（按天查询，与真实行为一致）。
 			startAt := r.URL.Query().Get("start_at")
-			if strings.HasPrefix(startAt, "2026-10-14") {
+			if strings.HasPrefix(startAt, day) {
 				_ = json.NewEncoder(w).Encode(visits)
 			} else {
 				_ = json.NewEncoder(w).Encode([]map[string]any{})
@@ -312,16 +315,16 @@ func TestDawarichSyncConfirmedOnlyAndDurationMinutes(t *testing.T) {
 		t.Fatalf("坐标应直通: (%v,%v)", e.Latitude, e.Longitude)
 	}
 	// started_at 本地归日。
-	if e.LocalDate != "2026-10-14" {
-		t.Fatalf("local_date 异常: %s", e.LocalDate)
+	if e.LocalDate != day {
+		t.Fatalf("local_date 异常: %s，期望 %s", e.LocalDate, day)
 	}
 	// 空名 confirmed → 坐标兜底标题。
 	if events[1].Title != "地点 31.2000,121.5000" {
 		t.Fatalf("空名兜底异常: %q", events[1].Title)
 	}
-	// 查询参数带时区偏移与 per_page（回溯窗口内必有一天是 2026-10-14）。
+	// 查询参数带时区偏移与 per_page（回溯窗口内必有一天是目标日）。
 	all := strings.Join(seen, " ")
-	if !strings.Contains(all, "start_at=2026-10-14T00%3A00%3A00%2B08%3A00") {
+	if !strings.Contains(all, "start_at="+url.QueryEscape(day+"T00:00:00+08:00")) {
 		t.Fatalf("start_at 时区参数异常: %v", seen)
 	}
 	if !strings.Contains(all, "per_page=500") {
