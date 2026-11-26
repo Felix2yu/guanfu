@@ -3,8 +3,8 @@ module github.com/Felix2yu/guanfu
 go 1.27
 
 require (
-	github.com/mark3labs/mcp-go v1.5.0
-	modernc.org/sqlite v1.62.0
+	github.com/mark3labs/mcp-go v1.6.0
+	modernc.org/sqlite v1.63.0
 )
 
 require (
